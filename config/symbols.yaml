@@ -1,0 +1,15 @@
+# SignalFlow — Symbols & Cross-Asset
+# Phase 1: נכסים לדוגמה
+
+primary:
+  - AAPL
+  - MSFT
+  - GOOGL
+  - SPY
+
+cross_asset:
+  sp500: "^GSPC"
+  vix: "^VIX"
+
+liquidity_gate:
+  min_dollar_volume_20d: 2_000_000  # USD

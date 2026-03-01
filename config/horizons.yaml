@@ -1,0 +1,22 @@
+# SignalFlow — Horizon Parameters
+# First-Class Citizen: כל שכבה משתמשת בזה
+
+daily:
+  resolution: "1D"
+  z_score_window: 30
+  cooldown_days: 3
+  arima_order: [2, 0, 2]
+  garch_focus: "risk_timing"
+
+weekly:
+  resolution: "1W"
+  z_score_window: 20
+  cooldown_days: 7
+  arima_order: [2, 0, 1]
+  garch_focus: "exposure_sizing"
+
+regime_outlook:
+  resolution: "1M"
+  z_score_window: 12
+  garch_focus: "risk_regime"  # Low / Medium / High only
+  no_ml: true

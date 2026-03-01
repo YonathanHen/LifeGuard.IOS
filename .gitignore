@@ -20,3 +20,7 @@ tests/report/
 .DS_Store
 bundles/
 keys/
+
+# SignalFlow — local secrets & artifacts
+.env
+storage/

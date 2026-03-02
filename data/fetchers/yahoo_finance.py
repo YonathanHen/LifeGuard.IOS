@@ -56,12 +56,36 @@ def fetch_yahoo(
     Returns OHLCV with Adjusted Close. Index = DatetimeIndex.
     For point-in-time: pass start_date, end_date (YYYY-MM-DD).
     """
+    import time
+    from datetime import datetime, timedelta
+
+    # Prefer start_date/end_date — Yahoo API sometimes fails with period
+    if start_date is None or end_date is None:
+        years = int("".join(c for c in str(period) if c.isdigit()) or 5)
+        end_d = datetime.now()
+        start_d = end_d - timedelta(days=365 * years)
+        _start = start_d.strftime("%Y-%m-%d")
+        _end = (end_d + timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        _start, _end = start_date, end_date
+
     session = _get_session()
     ticker = yf.Ticker(symbol, session=session) if session else yf.Ticker(symbol)
-    if start_date is not None and end_date is not None:
-        df = ticker.history(start=start_date, end=end_date, interval=interval, auto_adjust=False)
-    else:
-        df = ticker.history(period=period, interval=interval, auto_adjust=False)
+    df = pd.DataFrame()
+
+    for attempt in range(3):
+        try:
+            df = ticker.history(start=_start, end=_end, interval=interval, auto_adjust=False)
+            if df is not None and not df.empty:
+                break
+        except (TypeError, KeyError) as e:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise ValueError(f"Yahoo Finance failed for {symbol} (retried): {e}") from e
+
+    if df is None or df.empty:
+        raise ValueError(f"Yahoo Finance returned no data for {symbol}")
 
     if df.empty or len(df) < min_rows:
         raise ValueError(f"Insufficient data for {symbol}")

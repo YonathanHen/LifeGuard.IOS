@@ -2,6 +2,7 @@
 SignalFlow — Prediction endpoint
 GET /predict/{symbol}?horizon=daily
 """
+import os
 import sys
 from pathlib import Path
 
@@ -34,16 +35,23 @@ def _vol_bucket_to_risk(bucket: str) -> int:
     return {"low": 25, "medium": 50, "high": 75}.get(bucket, 50)
 
 
+def _default_ml_threshold() -> float:
+    """ML threshold from env (calibrated) or 0.6."""
+    return float(os.environ.get("ML_THRESHOLD", "0.6"))
+
+
 @router.get("/{symbol}")
 def predict(
     symbol: str,
     horizon: Literal["daily", "weekly", "regime_outlook"] = Query("daily"),
-    ml_threshold: Optional[float] = Query(0.6, ge=0.5, le=0.9),
+    ml_threshold: Optional[float] = Query(default=None, ge=0.5, le=0.9),
 ):
     """
     Get prediction for symbol.
     Context: { symbol, horizon } — First-Class Citizen.
     """
+    if ml_threshold is None:
+        ml_threshold = _default_ml_threshold()
     try:
         # Data
         pipeline = DataPipeline(symbol=symbol.upper(), horizon=horizon)

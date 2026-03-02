@@ -4,6 +4,16 @@
 
 ---
 
+## עיקרון מרכזי — לא "mini-Medallion"
+
+**ההצלחה לא מגיעה מלהיות "כמו הקרנות"** — אלא מלהיות **הרבה יותר ממושמעת**, בקנה מידה קטן.
+
+**מסגור:** Build a small, disciplined, **single-edge shop** — Edge אחד (Stat Core), פילטרים חכמים (Regime, Rules, ML), גיוון נכסים רק כדי להקטין סיכון. לא: 8 אסטרטגיות, 5 שכבות ML, 20 מקורות דאטה.
+
+*ראה גם: `GO_NO_GO_FRAMEWORK.md` — מתי עוצרים פיתוח ועוברים למסחר.*
+
+---
+
 ## חלק א' — מה עושים המצליחים
 
 ### 1.1 הביצועים (2024)
@@ -75,18 +85,22 @@
 
 ### Phase 1 — Quick Wins (1–3 חודשים)
 
-| # | משימה | תיאור | מאמץ |
+**סדר עדיפות (חובה):**
+
+| # | משימה | תיאור | הערה |
 |---|--------|-------|------|
-| 1 | **Multi-symbol** | הרצת אותה לוגיקה על SPY, QQQ, MSFT — בדיקת robustness | נמוך |
-| 2 | **Factor layer** | Momentum (12-1), Value (P/B) — סינון/דירוג לפני Stat Core | בינוני |
-| 3 | **Threshold optimization** | Grid search על ARIMA/GARCH thresholds — מיקום Plateau | נמוך |
-| 4 | **Paper Trading** | רישום החלטות ו-PnL — אימות בזמן אמת | בינוני |
+| 1 | **Paper Trading** | Gate אמיתי — רישום החלטות, PnL, מדדי אמון | **חובה ראשון** |
+| 2 | **Multi-symbol** | אותו קוד על SPY, QQQ, MSFT — **בלי tuning לנכס** | Robustness בלבד |
+| 3 | **Factor layer** | Momentum (12-1) בלבד — Value ל-daily חלש | |
+| 4 | **Threshold Plateau** | Grid search על Stat Core thresholds | |
+
+⚠️ Multi-symbol: **אותו סט חוקים, אותה לוגיקה** — לא לכייל thresholds לכל מניה.
 
 ### Phase 2 — Deepening (3–6 חודשים)
 
 | # | משימה | תיאור | מאמץ |
 |---|--------|-------|------|
-| 5 | **Weak predictors** | מודלים קטנים (volatility regime, volume spike, sentiment) — ensemble | גבוה |
+| 5 | **Weak predictors** | **חוקים חלשים** — לא מודלים קטנים. Veto/confirmation: volatility spike → veto, volume anomaly → reduce confidence, regime mismatch → block | גבוה |
 | 6 | **Alternative data** | News sentiment (free APIs), options put/call — כפייה נוספת | גבוה |
 | 7 | **Dual-Track ML** | Anchor (5–7y) + Scout (12–18mo) — מנגנון מגן מ-Alpha Decay | בינוני |
 | 8 | **Pairs / Stat arb** | זיהוי זוגות מתאמים (AAPL-MSFT) — mean reversion | גבוה |
@@ -105,7 +119,9 @@
 
 - ❌ HFT — דורש latency, infrastructure, עלויות ענק
 - ❌ Petabytes of data — לא רלוונטי ל-retail/small quant
-- ❌ 복잡ות יתר — עדיף few strategies שעובדות מאשר עשרות שלא מאומתות
+- ❌ אלפי weak predictors — לא ריאלי ולא נחוץ
+- ❌ Alternative data לפני scale — מעשית לא ריאלי
+- ❌ "עוד קצת ML = Medallion" — הקרנות מצליחות מגיוון, נפח, משמעת — לא מ-ML לבד
 
 ---
 

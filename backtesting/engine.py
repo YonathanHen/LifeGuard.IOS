@@ -89,6 +89,8 @@ class BacktestEngine:
         train_min_days: int = 252,
         use_ml: bool = False,
         ml_threshold: float = 0.6,
+        ml_negative_filter: bool = False,
+        ml_disaster_threshold: float = 0.80,
         commission_bps: float = 5.0,
         slippage_bps: float = 3.0,
     ):
@@ -98,6 +100,8 @@ class BacktestEngine:
         self.train_min_days = train_min_days
         self.use_ml = use_ml and horizon == "daily"
         self.ml_threshold = ml_threshold
+        self.ml_negative_filter = ml_negative_filter
+        self.ml_disaster_threshold = ml_disaster_threshold
         self.commission_bps = commission_bps
         self.slippage_bps = slippage_bps
 
@@ -167,11 +171,18 @@ class BacktestEngine:
                         has_edge = False
 
                     if self.use_ml and has_edge and arima_out["direction"] == "up":
-                        from models.ml.ensemble import ensemble_decision
                         ml_probs = ml_cache.get(dt_i) if dt_i in ml_cache else None
-                        has_ens, _ = ensemble_decision(
-                            has_edge, arima_out["direction"], ml_probs, self.ml_threshold
-                        )
+                        if self.ml_negative_filter:
+                            from models.ml.ensemble import ensemble_decision_negative_filter
+                            has_ens, _ = ensemble_decision_negative_filter(
+                                has_edge, arima_out["direction"], ml_probs,
+                                self.ml_disaster_threshold
+                            )
+                        else:
+                            from models.ml.ensemble import ensemble_decision
+                            has_ens, _ = ensemble_decision(
+                                has_edge, arima_out["direction"], ml_probs, self.ml_threshold
+                            )
                         has_edge = has_ens
 
                     pos = 1 if has_edge and arima_out["direction"] == "up" else 0
@@ -335,9 +346,15 @@ class BacktestEngine:
         round_trip_cost: float,
         refit_every: int,
         ml_threshold: float,
+        disaster_threshold_override: Optional[float] = None,
     ) -> BacktestResult:
-        """Run backtest from pre-computed decisions, with given ml_threshold."""
-        from models.ml.ensemble import ensemble_decision
+        """Run backtest from pre-computed decisions. Uses ml_threshold (AND) or disaster_threshold (negative filter)."""
+        if self.ml_negative_filter:
+            from models.ml.ensemble import ensemble_decision_negative_filter
+            th = disaster_threshold_override if disaster_threshold_override is not None else self.ml_disaster_threshold
+        else:
+            from models.ml.ensemble import ensemble_decision
+            th = ml_threshold
 
         positions: List[int] = []
         realized: List[float] = []
@@ -347,9 +364,12 @@ class BacktestEngine:
             is_refit = j % refit_every == 0
             if is_refit:
                 if has_edge and direction == "up":
-                    has_ens, _ = ensemble_decision(
-                        has_edge, direction, ml_probs, ml_threshold
-                    )
+                    if self.ml_negative_filter:
+                        has_ens, _ = ensemble_decision_negative_filter(
+                            has_edge, direction, ml_probs, th
+                        )
+                    else:
+                        has_ens, _ = ensemble_decision(has_edge, direction, ml_probs, th)
                     prev_pos = 1 if has_ens else 0
                 else:
                     prev_pos = 0
@@ -399,9 +419,15 @@ class BacktestEngine:
         rows = []
         primary_result = None
         for th in thresholds:
-            r = self._run_from_cache(
-                decisions, next_returns, round_trip_cost, refit_every, th
-            )
+            if self.ml_negative_filter:
+                r = self._run_from_cache(
+                    decisions, next_returns, round_trip_cost, refit_every,
+                    self.ml_threshold, disaster_threshold_override=th
+                )
+            else:
+                r = self._run_from_cache(
+                    decisions, next_returns, round_trip_cost, refit_every, th
+                )
             rows.append({
                 "Threshold": th,
                 "Sharpe": r.sharpe_ratio,
@@ -419,6 +445,7 @@ class BacktestEngine:
         self,
         period: str,
         ml_threshold: float = 0.6,
+        disaster_threshold: Optional[float] = None,
         decisions: Optional[List[tuple]] = None,
         next_returns: Optional[List[float]] = None,
         refit_every: Optional[int] = None,
@@ -428,8 +455,14 @@ class BacktestEngine:
         - Saved Losses: ML blocked, actual return < 0
         - Missed Opportunities: ML blocked, actual return > 0
         Optional: pass pre-built cache from run_stability to avoid recompute.
+        Uses disaster_threshold when ml_negative_filter=True.
         """
-        from models.ml.ensemble import ensemble_decision
+        if self.ml_negative_filter:
+            from models.ml.ensemble import ensemble_decision_negative_filter
+            th = disaster_threshold if disaster_threshold is not None else self.ml_disaster_threshold
+        else:
+            from models.ml.ensemble import ensemble_decision
+            th = ml_threshold
 
         if decisions is None or next_returns is None or refit_every is None:
             dec, rets, _, ref = self._build_decision_cache(period)
@@ -444,12 +477,15 @@ class BacktestEngine:
             is_refit = j % ref == 0
             if not is_refit:
                 continue
-            has_ens, _ = ensemble_decision(
-                has_edge, direction, ml_probs, ml_threshold
-            )
+            if self.ml_negative_filter:
+                has_ens, _ = ensemble_decision_negative_filter(
+                    has_edge, direction, ml_probs, th
+                )
+            else:
+                has_ens, _ = ensemble_decision(has_edge, direction, ml_probs, th)
             if has_ens:
                 continue
-            # ML blocked — Stat would have gone Long
+            # ML blocked - Stat would have gone Long
             ret = rets[j]
             if ret < 0:
                 saved_losses += 1

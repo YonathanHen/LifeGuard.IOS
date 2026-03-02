@@ -4,6 +4,22 @@
 
 ---
 
+## 0. שינוי כיוון אסטרטגי — Stat-Led with ML Safeguard (מרץ 2025)
+
+המערכת עברה למודל **Stat-Led with ML Safeguard**:
+
+| הישן (AND) | החדש (Negative Filter) |
+|------------|-------------------------|
+| Trade = Stat Edge **AND** ML P(up) ≥ threshold | Trade = Stat Edge **UNLESS** ML P(down) > disaster_threshold |
+| ML חייב לאשר | ML חוסם רק "אסונות" |
+| סף P_up (0.6) — Calibration | סף P_down (0.80) — Stability |
+
+**סיבה:** ניתוח Stability ו-Error Type הראה שה-LSTM בעל הטיה שלילית (Pessimistic Bias) — חסם יותר עליות מירידות. המודל החדש מאפשר ל-Stat Core להוביל, ומשתמש ב-ML רק כמסנן אסונות (block when P_down > 0.80).
+
+**תוצאות Backtest (AAPL 2y):** Stat+ML Negative Filter: Sharpe 0.49, Max DD -12% (vs AND: Sharpe -0.55, DD -16%). ה-API ועדכון `.env` עודכנו בהתאם.
+
+---
+
 ## 1. מה נבנה עד כה (לפי PLANNING.md)
 
 ### 1.1 ארכיטקטורה שהושלמה

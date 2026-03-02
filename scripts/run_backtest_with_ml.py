@@ -61,6 +61,8 @@ def main():
     ap.add_argument("--stability-start", type=float, default=0.50, help="Stability range start (default 0.50)")
     ap.add_argument("--stability-end", type=float, default=0.70, help="Stability range end (default 0.70)")
     ap.add_argument("--stability-step", type=float, default=0.02, help="Stability step (default 0.02)")
+    ap.add_argument("--no-negative-filter", action="store_true", help="Use legacy AND mode instead of Negative Filter (default: Negative Filter)")
+    ap.add_argument("--disaster-threshold", type=float, default=0.80, help="Negative Filter: block when P(down) > this (default 0.80)")
     ap.add_argument("--save-equity", type=str, help="Save equity curves to CSV")
     ap.add_argument("--plot", action="store_true", help="Plot equity curve comparison (requires matplotlib)")
     args = ap.parse_args()
@@ -87,38 +89,56 @@ def main():
     _print_result("Stat Core only", r_stat)
 
     if not args.no_ml:
+        neg_filter = not args.no_negative_filter  # Default: Negative Filter (Sweet spot 0.80)
         engine_ml = BacktestEngine(
             symbol=args.symbol,
             horizon="daily",
             use_ml=True,
             ml_threshold=0.6,
+            ml_negative_filter=neg_filter,
+            ml_disaster_threshold=args.disaster_threshold,
             commission_bps=commission,
             slippage_bps=slippage,
         )
+        ml_label = f"Stat + ML (neg filter P_down>{args.disaster_threshold})" if neg_filter else "Stat + ML (0.60)"
 
         if args.stability:
-            # Pre-compute once, fast run over threshold range (incl. 0.6 for r_ml)
             import numpy as np
             import statistics
-            thresholds = np.arange(
-                args.stability_start,
-                args.stability_end + args.stability_step / 2,
-                args.stability_step,
-            ).tolist()
-            thresholds = [round(t, 2) for t in thresholds]
-            if 0.6 not in thresholds:
-                thresholds = sorted(set(thresholds + [0.6]))
-            print(f"\n--- Threshold Stability ({len(thresholds)} thresholds: {args.stability_start:.2f}-{args.stability_end:.2f}) ---")
+            if neg_filter:
+                # Negative filter: vary disaster_threshold (P_down), default 0.75-0.85 step 0.05
+                st_start, st_end, st_step = 0.75, 0.85, 0.05
+                thresholds = np.arange(st_start, st_end + st_step / 2, st_step).tolist()
+                thresholds = [round(t, 2) for t in thresholds]
+                if args.disaster_threshold not in thresholds:
+                    thresholds = sorted(set(thresholds + [args.disaster_threshold]))
+                primary_th = args.disaster_threshold
+                col_name = "DisasterTh"
+            else:
+                thresholds = np.arange(
+                    args.stability_start,
+                    args.stability_end + args.stability_step / 2,
+                    args.stability_step,
+                ).tolist()
+                thresholds = [round(t, 2) for t in thresholds]
+                if 0.6 not in thresholds:
+                    thresholds = sorted(set(thresholds + [0.6]))
+                primary_th = 0.6
+                col_name = "Threshold"
+            print(f"\n--- {'Disaster Threshold' if neg_filter else 'Threshold'} Stability ({len(thresholds)} steps) ---")
             print("Pre-compute once -> fast run over all thresholds")
             print()
             df_stability, r_ml, st_cache = engine_ml.run_stability(
-                period=args.period, thresholds=thresholds, primary_threshold=0.6
+                period=args.period, thresholds=thresholds, primary_threshold=primary_th
             )
+            # Rename Threshold col for negative filter clarity
+            if neg_filter and "Threshold" in df_stability.columns:
+                df_stability = df_stability.rename(columns={"Threshold": col_name})
             print(df_stability.to_string(index=False))
             print()
             if r_ml is None:
                 r_ml = engine_ml.run(period=args.period)
-            _print_result("Stat + ML (0.60)", r_ml)
+            _print_result(ml_label, r_ml)
             # Plateau / Peak / Cliff
             sharpes = df_stability["Sharpe"].tolist()
             trades = df_stability["Trades"].tolist()
@@ -134,19 +154,22 @@ def main():
                     print("  [!!] The Cliff: trades drop at some thresholds - model too selective")
                 if df_stability["Exposure"].min() < 10:
                     print("  [!!] Exposure < 10% - consider lower threshold (e.g. 0.55)")
-            # Error Type Analysis (reuses cache from stability — no extra precompute)
+            # Error Type Analysis (reuses cache from stability - no extra precompute)
             dec, rets, ref = st_cache
             err = engine_ml.error_type_analysis(
-                period=args.period, ml_threshold=0.6,
+                period=args.period,
+                ml_threshold=0.6,
+                disaster_threshold=args.disaster_threshold if neg_filter else None,
                 decisions=dec, next_returns=rets, refit_every=ref,
             )
+            th_desc = f"P_down>{args.disaster_threshold}" if neg_filter else "0.60"
             print()
-            print("--- Error Type (Stat Long, ML blocked @ 0.60) ---")
+            print(f"--- Error Type (Stat Long, ML blocked @ {th_desc}) ---")
             print(f"  Saved Losses (ML blocked, price fell):      {err['saved_losses']}")
             print(f"  Missed Opportunities (ML blocked, price rose): {err['missed_opportunities']}")
         else:
             r_ml = engine_ml.run(period=args.period)
-            _print_result("Stat + ML (0.60)", r_ml)
+            _print_result(ml_label, r_ml)
 
         # Decision Density
         d_stat = _decision_density(r_stat, years)

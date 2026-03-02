@@ -121,7 +121,33 @@
 
 ---
 
-## חלק ד׳ — מסמכי ייחוס
+## חלק ד׳ — מה חסר ל-"כן" (מסחר אמיתי)?
+
+**מצב נוכחי:** Stat-Led with ML Safeguard, סף 0.80 — **"להפעיל במצב שמרני"**. לא "מכונת כסף", אלא אסטרטגיה סולידית.
+
+### 4.1 משוכות להמשך
+
+| משוכה | תיאור | מאמץ | עדיפות |
+|-------|--------|------|--------|
+| **Alpha Decay** | LSTM אומן על היסטוריה — שחיקה בתנאי 2025–2026 | בינוני | גבוהה |
+| **Walk-Forward Optimization** | אימון מחדש כל רבעון (Rolling window) — לימוד דינמיקה עדכנית | גבוה | קריטי |
+| **Positive Alpha** | ML יודע למצוא טריידים ש-Stat Core מפספס, לא רק לסנן | גבוה | לטווח ארוך |
+
+### 4.2 דעת מערכת
+
+- **Alpha Decay:** אמת — המודל "רואה" 2022 ולא 2025. Negative Filter מפחית נזק אך לא פותר את השחיקה.
+- **Walk-Forward:** הכרחי למסחר רציף. ללא refit תקופתי, ה-ML הופך ל-anchor.
+- **Positive Alpha:** כרגע ML = מסנן. אידיאלי: ML גם מזהה הזדמנויות שהסטט מפספס. דורש ארכיטקטורה אחרת (לא רק P_down).
+
+### 4.3 סדר פעולה מומלץ
+
+1. **עכשיו:** Paper Trading 3–6 חודשים עם Negative Filter @ 0.80.
+2. **Q2:** מנגנון Walk-Forward — retrain LSTM כל רבעון.
+3. **Q3+:** בחינת Positive Alpha — האם ML יכול להוסיף טריידים (לא רק לחסום).
+
+---
+
+## חלק ה׳ — מסמכי ייחוס
 
 | מסמך | תפקיד |
 |------|--------|
@@ -139,11 +165,11 @@
 # Calibration (כ־2 דקות)
 python scripts/calibrate_ml_threshold.py
 
-# Backtest Stat vs Stat+ML
+# Backtest Stat vs Stat+ML (default: Negative Filter @ 0.80)
 python scripts/run_backtest_with_ml.py --period 3y
 
-# Backtest + Threshold Stability (כ־15 דקות)
-python scripts/run_backtest_with_ml.py --period 3y --stability
+# Disaster threshold stability (0.75–0.85)
+python scripts/run_backtest_with_ml.py --period 2y --stability
 
 # שמירת Equity Curve + גרף
 python scripts/run_backtest_with_ml.py --period 3y --save-equity equity.csv --plot

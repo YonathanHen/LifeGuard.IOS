@@ -51,3 +51,27 @@ def ensemble_decision(
     if supported:
         return True, ml_reason
     return False, ml_reason
+
+
+def ensemble_decision_negative_filter(
+    has_edge: bool,
+    direction: str,
+    ml_probs: Optional[Dict[str, float]],
+    disaster_threshold: float = 0.80,
+) -> Tuple[bool, str]:
+    """
+    Negative Filter: Trade if Stat Core says Long, UNLESS ML is very confident of drop.
+    Block only when P_down > disaster_threshold (e.g. 0.80).
+    Use when ML has pessimistic bias - avoid blocking good trades, only block disasters.
+    Returns (should_trade, reason).
+    """
+    if not has_edge:
+        return False, "No statistical edge"
+    if direction != "up":
+        return False, "Stat direction not Long"
+    if ml_probs is None:
+        return True, "ML not available - allow (Stat only fallback)"
+    p_down = ml_probs.get("P_down", 0.0)
+    if p_down > disaster_threshold:
+        return False, f"ML P(down)={p_down:.2f} > {disaster_threshold} (block disaster)"
+    return True, f"ML P(down)={p_down:.2f} <= {disaster_threshold} (allow)"

@@ -15,7 +15,7 @@ from typing import Literal, Optional
 from data.pipeline import DataPipeline
 from models.regime import RegimeDetector
 from models.ml.lstm_model import LSTMPredictor
-from models.ml.ensemble import ensemble_decision
+from models.ml.ensemble import ensemble_decision_negative_filter
 from models.stat import ARIMAModel, GARCHModel
 from models.rules.engine import (
     has_statistical_edge,
@@ -35,23 +35,24 @@ def _vol_bucket_to_risk(bucket: str) -> int:
     return {"low": 25, "medium": 50, "high": 75}.get(bucket, 50)
 
 
-def _default_ml_threshold() -> float:
-    """ML threshold from env (calibrated) or 0.6."""
-    return float(os.environ.get("ML_THRESHOLD", "0.6"))
+def _default_disaster_threshold() -> float:
+    """Negative Filter threshold: block when P_down > this. Sweet spot 0.80."""
+    return float(os.environ.get("ML_NEGATIVE_FILTER_THRESHOLD")
+                 or os.environ.get("ML_DISASTER_THRESHOLD", "0.80"))
 
 
 @router.get("/{symbol}")
 def predict(
     symbol: str,
     horizon: Literal["daily", "weekly", "regime_outlook"] = Query("daily"),
-    ml_threshold: Optional[float] = Query(default=None, ge=0.5, le=0.9),
+    disaster_threshold: Optional[float] = Query(default=None, ge=0.5, le=0.95),
 ):
     """
     Get prediction for symbol.
-    Context: { symbol, horizon } — First-Class Citizen.
+    Logic: Stat_Led with ML Safeguard — Trade if Stat Edge, UNLESS ML P(down) > disaster_threshold.
     """
-    if ml_threshold is None:
-        ml_threshold = _default_ml_threshold()
+    if disaster_threshold is None:
+        disaster_threshold = _default_disaster_threshold()
     try:
         # Data
         pipeline = DataPipeline(symbol=symbol.upper(), horizon=horizon)
@@ -104,14 +105,16 @@ def predict(
 
         risk_score = _vol_bucket_to_risk(garch_out["volatility_bucket"])
 
-        # ML Layer (Phase 2B) — daily only (helps daily, hurts weekly)
+        # ML Layer — Stat-Led with ML Safeguard (Negative Filter)
+        # Trade if Stat Edge, block only when ML P(down) > disaster_threshold
         ml_probs = None
         lstm = LSTMPredictor()
         if horizon == "daily" and lstm.load():
             ml_probs = lstm.predict_proba(df)
             if ml_probs is not None:
-                should_trade, _ = ensemble_decision(
-                    has_edge, arima_out["direction"], ml_probs, threshold=ml_threshold
+                should_trade, _ = ensemble_decision_negative_filter(
+                    has_edge, arima_out["direction"], ml_probs,
+                    disaster_threshold=disaster_threshold,
                 )
                 if not should_trade:
                     has_edge = False

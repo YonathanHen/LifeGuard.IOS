@@ -57,7 +57,10 @@ def main():
     ap.add_argument("--symbol", default="AAPL", help="Symbol")
     ap.add_argument("--no-ml", action="store_true", help="Run Stat only (no ML comparison)")
     ap.add_argument("--no-costs", action="store_true", help="Disable commission/slippage")
-    ap.add_argument("--stability", action="store_true", help="Run threshold stability ±0.02")
+    ap.add_argument("--stability", action="store_true", help="Run threshold stability (pre-compute once)")
+    ap.add_argument("--stability-start", type=float, default=0.50, help="Stability range start (default 0.50)")
+    ap.add_argument("--stability-end", type=float, default=0.70, help="Stability range end (default 0.70)")
+    ap.add_argument("--stability-step", type=float, default=0.02, help="Stability step (default 0.02)")
     ap.add_argument("--save-equity", type=str, help="Save equity curves to CSV")
     ap.add_argument("--plot", action="store_true", help="Plot equity curve comparison (requires matplotlib)")
     args = ap.parse_args()
@@ -84,7 +87,6 @@ def main():
     _print_result("Stat Core only", r_stat)
 
     if not args.no_ml:
-        # Stat + ML (default threshold 0.6)
         engine_ml = BacktestEngine(
             symbol=args.symbol,
             horizon="daily",
@@ -93,8 +95,58 @@ def main():
             commission_bps=commission,
             slippage_bps=slippage,
         )
-        r_ml = engine_ml.run(period=args.period)
-        _print_result("Stat + ML (0.60)", r_ml)
+
+        if args.stability:
+            # Pre-compute once, fast run over threshold range (incl. 0.6 for r_ml)
+            import numpy as np
+            import statistics
+            thresholds = np.arange(
+                args.stability_start,
+                args.stability_end + args.stability_step / 2,
+                args.stability_step,
+            ).tolist()
+            thresholds = [round(t, 2) for t in thresholds]
+            if 0.6 not in thresholds:
+                thresholds = sorted(set(thresholds + [0.6]))
+            print(f"\n--- Threshold Stability ({len(thresholds)} thresholds: {args.stability_start:.2f}-{args.stability_end:.2f}) ---")
+            print("Pre-compute once -> fast run over all thresholds")
+            print()
+            df_stability, r_ml, st_cache = engine_ml.run_stability(
+                period=args.period, thresholds=thresholds, primary_threshold=0.6
+            )
+            print(df_stability.to_string(index=False))
+            print()
+            if r_ml is None:
+                r_ml = engine_ml.run(period=args.period)
+            _print_result("Stat + ML (0.60)", r_ml)
+            # Plateau / Peak / Cliff
+            sharpes = df_stability["Sharpe"].tolist()
+            trades = df_stability["Trades"].tolist()
+            if len(sharpes) >= 2:
+                sharpe_std = statistics.stdev(sharpes)
+                med = statistics.median(sharpes)
+                best_sharpe = max(sharpes)
+                if sharpe_std < 0.2:
+                    print("  [OK] Plateau: stable results - robust model")
+                elif best_sharpe > med + 0.5:
+                    print("  [!!] The Peak: single threshold with outlier Sharpe - check overfitting")
+                if min(trades) < 10 and max(trades) > 50:
+                    print("  [!!] The Cliff: trades drop at some thresholds - model too selective")
+                if df_stability["Exposure"].min() < 10:
+                    print("  [!!] Exposure < 10% - consider lower threshold (e.g. 0.55)")
+            # Error Type Analysis (reuses cache from stability — no extra precompute)
+            dec, rets, ref = st_cache
+            err = engine_ml.error_type_analysis(
+                period=args.period, ml_threshold=0.6,
+                decisions=dec, next_returns=rets, refit_every=ref,
+            )
+            print()
+            print("--- Error Type (Stat Long, ML blocked @ 0.60) ---")
+            print(f"  Saved Losses (ML blocked, price fell):      {err['saved_losses']}")
+            print(f"  Missed Opportunities (ML blocked, price rose): {err['missed_opportunities']}")
+        else:
+            r_ml = engine_ml.run(period=args.period)
+            _print_result("Stat + ML (0.60)", r_ml)
 
         # Decision Density
         d_stat = _decision_density(r_stat, years)
@@ -102,18 +154,6 @@ def main():
         print("\n--- Decision Density ---")
         print(f"  Stat:     {d_stat['trades_per_year']:.1f} trades/yr | {d_stat['avg_days_in_trade']:.1f} avg days | {d_stat['avg_return_per_trade']*100:.2f}% avg ret/trade")
         print(f"  Stat+ML:  {d_ml['trades_per_year']:.1f} trades/yr | {d_ml['avg_days_in_trade']:.1f} avg days | {d_ml['avg_return_per_trade']*100:.2f}% avg ret/trade")
-
-        # Threshold Stability (±0.02)
-        if args.stability:
-            print("\n--- Threshold Stability (±0.02) ---")
-            for th in [0.58, 0.60, 0.62]:
-                eng = BacktestEngine(
-                    symbol=args.symbol, horizon="daily",
-                    use_ml=True, ml_threshold=th,
-                    commission_bps=commission, slippage_bps=slippage,
-                )
-                rr = eng.run(period=args.period)
-                print(f"  {th:.2f}: Sharpe={rr.sharpe_ratio:.3f} DD={rr.max_drawdown:.1%} Trades={rr.n_trades}")
 
         # Save equity curve
         if args.save_equity:

@@ -6,7 +6,7 @@ Uses Regime, Cross-Asset, Liquidity. Optional: ML layer, costs.
 import sys
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -252,3 +252,208 @@ class BacktestEngine:
         running_max = cum.cummax()
         dd = (cum - running_max) / running_max
         return float(dd.min())
+
+    def _build_decision_cache(
+        self, period: str
+    ) -> tuple:
+        """
+        Pre-compute once: per-refit-day (has_edge, direction, ml_probs), returns series.
+        Returns (daily_decisions, next_returns, round_trip_cost).
+        daily_decisions: list of (has_edge, direction, ml_probs) for each backtest day.
+        On refit days we compute; on non-refit we carry over previous.
+        """
+        pipeline = DataPipeline(self.symbol, self.horizon, period=period)
+        df = pipeline.run()
+        returns = df["returns"].dropna()
+        if len(returns) < self.train_min_days + 50:
+            raise ValueError(f"Need at least {self.train_min_days + 50} days")
+
+        start_dt = returns.index[0]
+        end_dt = returns.index[-1]
+        sp, vix = fetch_cross_asset(
+            horizon=self.horizon,
+            start_date=start_dt.strftime("%Y-%m-%d"),
+            end_date=end_dt.strftime("%Y-%m-%d"),
+        )
+        dv_aligned = None
+        if "dollar_volume_20d" in df.columns:
+            dv_aligned = df["dollar_volume_20d"].reindex(returns.index).ffill()
+
+        backtest_dates = returns.index[self.train_min_days : len(returns) - 1]
+        ml_cache = _precompute_ml_probs(self.symbol, self.horizon, backtest_dates)
+
+        decisions: List[tuple] = []
+        last_has_edge, last_direction, last_ml_probs = False, "flat", None
+
+        for i in range(self.train_min_days, len(returns) - 1):
+            dt_i = returns.index[i]
+            is_refit = (i - self.train_min_days) % self.refit_every == 0
+
+            if is_refit:
+                try:
+                    train = returns.iloc[:i]
+                    arima = ARIMAModel(order=(2, 0, 2)).fit(train)
+                    garch = GARCHModel().fit(train)
+                    arima_out = arima.predict_next()
+                    garch_out = garch.predict_next()
+                    has_edge = has_statistical_edge(arima_out, garch_out)
+
+                    regime = RegimeDetector(horizon=self.horizon).fit(train)
+                    _, regime_stable = regime.predict(train)
+                    if not regime_stable:
+                        has_edge = False
+
+                    sp_slice = sp.loc[sp.index <= dt_i].tail(30)
+                    vix_slice = vix.loc[vix.index <= dt_i].tail(30)
+                    cross_ok, _ = check_cross_asset_alignment_from_series(sp_slice, vix_slice)
+                    if not cross_ok:
+                        has_edge = False
+
+                    dv = float(dv_aligned.iloc[i]) if dv_aligned is not None else 0.0
+                    if not liquidity_gate(dv):
+                        has_edge = False
+
+                    last_has_edge = has_edge
+                    last_direction = arima_out["direction"]
+                    last_ml_probs = ml_cache.get(dt_i)
+                except Exception:
+                    last_has_edge, last_direction, last_ml_probs = False, "flat", None
+
+            decisions.append((last_has_edge, last_direction, last_ml_probs))
+
+        next_returns = [
+            float(returns.iloc[self.train_min_days + j + 1])
+            for j in range(len(decisions))
+        ]
+        round_trip_cost = 2 * (self.commission_bps + self.slippage_bps) / 10_000
+        return decisions, next_returns, round_trip_cost, self.refit_every
+
+    def _run_from_cache(
+        self,
+        decisions: List[tuple],
+        next_returns: List[float],
+        round_trip_cost: float,
+        refit_every: int,
+        ml_threshold: float,
+    ) -> BacktestResult:
+        """Run backtest from pre-computed decisions, with given ml_threshold."""
+        from models.ml.ensemble import ensemble_decision
+
+        positions: List[int] = []
+        realized: List[float] = []
+        prev_pos = 0
+
+        for j, (has_edge, direction, ml_probs) in enumerate(decisions):
+            is_refit = j % refit_every == 0
+            if is_refit:
+                if has_edge and direction == "up":
+                    has_ens, _ = ensemble_decision(
+                        has_edge, direction, ml_probs, ml_threshold
+                    )
+                    prev_pos = 1 if has_ens else 0
+                else:
+                    prev_pos = 0
+
+            positions.append(prev_pos)
+            ret = prev_pos * next_returns[j]
+            if round_trip_cost > 0 and prev_pos == 1 and (j == 0 or positions[j - 1] == 0):
+                ret -= round_trip_cost
+            realized.append(ret)
+
+        strat = pd.Series(realized)
+        sharpe = self._sharpe(strat)
+        dd = self._max_drawdown(strat)
+        total_ret = float((1 + strat).prod() - 1)
+        equity = (1 + strat).cumprod()
+        long_days = [k for k, p in enumerate(positions) if p == 1]
+        hit_rate = 0.0
+        if long_days:
+            hit_rate = sum(1 for k in long_days if realized[k] > 0) / len(long_days)
+        exposure = 100.0 * sum(positions) / len(positions) if positions else 0.0
+
+        return BacktestResult(
+            sharpe_ratio=sharpe,
+            max_drawdown=dd,
+            total_return=total_ret,
+            n_trades=sum(positions),
+            hit_rate=hit_rate,
+            equity_curve=equity,
+            exposure_pct=exposure,
+            n_days=len(positions),
+        )
+
+    def run_stability(
+        self,
+        period: str,
+        thresholds: List[float],
+        primary_threshold: Optional[float] = None,
+    ) -> Tuple[pd.DataFrame, Optional[BacktestResult], Tuple[List, List, int]]:
+        """
+        Pre-compute decisions once, then run backtest for each threshold.
+        Returns (DataFrame, primary_result, cache) — cache for error_type_analysis.
+        """
+        decisions, next_returns, round_trip_cost, refit_every = self._build_decision_cache(
+            period
+        )
+        cache = (decisions, next_returns, refit_every)
+        rows = []
+        primary_result = None
+        for th in thresholds:
+            r = self._run_from_cache(
+                decisions, next_returns, round_trip_cost, refit_every, th
+            )
+            rows.append({
+                "Threshold": th,
+                "Sharpe": r.sharpe_ratio,
+                "MaxDD": r.max_drawdown,
+                "Return": r.total_return,
+                "Trades": r.n_trades,
+                "Exposure": r.exposure_pct,
+                "WinRate": r.hit_rate,
+            })
+            if primary_threshold is not None and abs(th - primary_threshold) < 0.001:
+                primary_result = r
+        return pd.DataFrame(rows), primary_result, cache
+
+    def error_type_analysis(
+        self,
+        period: str,
+        ml_threshold: float = 0.6,
+        decisions: Optional[List[tuple]] = None,
+        next_returns: Optional[List[float]] = None,
+        refit_every: Optional[int] = None,
+    ) -> Dict[str, int]:
+        """
+        Days when Stat said Long but ML blocked:
+        - Saved Losses: ML blocked, actual return < 0
+        - Missed Opportunities: ML blocked, actual return > 0
+        Optional: pass pre-built cache from run_stability to avoid recompute.
+        """
+        from models.ml.ensemble import ensemble_decision
+
+        if decisions is None or next_returns is None or refit_every is None:
+            dec, rets, _, ref = self._build_decision_cache(period)
+        else:
+            dec, rets, ref = decisions, next_returns, refit_every
+        saved_losses = 0
+        missed_opps = 0
+
+        for j, (has_edge, direction, ml_probs) in enumerate(dec):
+            if not (has_edge and direction == "up"):
+                continue
+            is_refit = j % ref == 0
+            if not is_refit:
+                continue
+            has_ens, _ = ensemble_decision(
+                has_edge, direction, ml_probs, ml_threshold
+            )
+            if has_ens:
+                continue
+            # ML blocked — Stat would have gone Long
+            ret = rets[j]
+            if ret < 0:
+                saved_losses += 1
+            else:
+                missed_opps += 1
+
+        return {"saved_losses": saved_losses, "missed_opportunities": missed_opps}

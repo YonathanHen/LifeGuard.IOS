@@ -198,7 +198,8 @@
 | מסמך | תפקיד |
 |------|--------|
 | **ALGORITHM_SPEC.md** | מפרט אלגוריתם: כל מרכיבים ופרמטרים |
-| **RESULTS_SUMMARY.md** | סיכום מרוכז של כל התוצאות (Backtest + Validation) |
+| **RESULTS_SUMMARY.md** | סיכום מרוכז של כל התוצאות |
+| **HEDGE_FUNDS_ANALYSIS_AND_ROADMAP.md** | ניתוח Renaissance/Citadel/Two Sigma + תוכנית שיפור |
 | **storage/backtest_runs.json** | היסטוריית הרצות (שמירה אוטומטית) |
 | **TRADING_READINESS_PLAN.md** | תוכנית מוכנות למסחר |
 | **ROADMAP_V2.md** | תכנון כללי |

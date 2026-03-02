@@ -136,6 +136,16 @@ def predict(
             "regime": regime_name,
             "external_features_available": pipeline.is_fred_available(),
         }
+        if horizon == "daily":
+            try:
+                from models.ml.train_info import get_lstm_train_info
+                info = get_lstm_train_info()
+                if info:
+                    resp["ml_last_trained"] = info.get("train_date") or info.get("data_end_date")
+                    resp["ml_days_since_train"] = info.get("days_ago")
+                    resp["ml_stale"] = info.get("stale", False)
+            except Exception:
+                pass
         if in_cooldown and cooldown_day is not None and cooldown_total is not None:
             resp["cooldown"] = True
             resp["cooldown_day"] = cooldown_day

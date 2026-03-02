@@ -142,7 +142,7 @@
 ### 4.3 סדר פעולה מומלץ
 
 1. **עכשיו:** Paper Trading 3–6 חודשים עם Negative Filter @ 0.80.
-2. **Q2:** מנגנון Walk-Forward — retrain LSTM כל רבעון.
+2. **Walk-Forward:** `scripts/walk_forward_retrain.py` — retrain LSTM כל רבעון. ראה נספח.
 3. **Q3+:** בחינת Positive Alpha — האם ML יכול להוסיף טריידים (לא רק לחסום).
 
 ---
@@ -173,6 +173,24 @@ python scripts/run_backtest_with_ml.py --period 2y --stability
 
 # שמירת Equity Curve + גרף
 python scripts/run_backtest_with_ml.py --period 3y --save-equity equity.csv --plot
+
+# Walk-Forward Retrain (quarterly) — combat Alpha Decay
+python scripts/walk_forward_retrain.py
+
+# Check if model stale (older than 90 days)
+python scripts/walk_forward_retrain.py --check
+
+# Custom window / end date
+python scripts/walk_forward_retrain.py --period 5y --end-date 2025-12-31
+```
+
+### תזמון (Windows Task Scheduler / Linux cron)
+```text
+# Linux: 1st of every quarter (Jan, Apr, Jul, Oct)
+0 2 1 1,4,7,10 * cd /path/to/SignalFlow && python scripts/walk_forward_retrain.py
+
+# Windows: Task Scheduler — create task, trigger Monthly, Day 1, Run:
+#   python C:\path\to\SignalFlow\scripts\walk_forward_retrain.py
 ```
 
 ---

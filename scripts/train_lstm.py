@@ -36,12 +36,33 @@ def main():
     for c in cols:
         print(f"  {c}: {'Y' if c in df.columns else 'N (fallback)'}")
 
+    from datetime import datetime
     predictor = LSTMPredictor(lookback=40)
-    result = predictor.fit(df, epochs=80, lr=0.001, batch_size=32, val_frac=0.2)
+    train_meta = {
+        "train_date": datetime.utcnow().isoformat() + "Z",
+        "data_end_date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "symbol": symbol,
+        "period": period,
+    }
+    result = predictor.fit(
+        df,
+        epochs=80,
+        lr=0.001,
+        batch_size=32,
+        val_frac=0.2,
+        train_meta=train_meta,
+    )
 
     if "error" in result:
         print(f"\nError: {result['error']}")
         return 1
+
+    # Save train info for API freshness check
+    info_path = Path(__file__).parent.parent / "storage" / "lstm_train_info.json"
+    info_path.parent.mkdir(parents=True, exist_ok=True)
+    import json
+    with open(info_path, "w") as f:
+        json.dump({**train_meta, "train_loss": result["train_loss"], "val_loss": result["val_loss"]}, f, indent=2)
 
     print(f"\nTrain loss: {result['train_loss']:.4f} | Val loss: {result['val_loss']:.4f}")
     print("Model saved to storage/lstm_model.pt")

@@ -113,6 +113,7 @@ class LSTMPredictor:
         batch_size: int = 32,
         val_frac: float = 0.2,
         device: Optional[str] = None,
+        train_meta: Optional[dict] = None,
     ) -> Dict[str, float]:
         """
         Train on pipeline DataFrame. Uses forward returns for labels.
@@ -179,6 +180,7 @@ class LSTMPredictor:
                 val_loss = crit(model(vx), vy).item()
 
         self._model = model
+        self._train_meta = train_meta or {}
         self._save()
         return {"train_loss": train_loss, "val_loss": val_loss}
 
@@ -194,6 +196,7 @@ class LSTMPredictor:
             "scaler_mean": self._scaler_mean.tolist() if self._scaler_mean is not None else None,
             "scaler_std": self._scaler_std.tolist() if self._scaler_std is not None else None,
         }
+        meta.update(getattr(self, "_train_meta", {}))
         torch.save({"state_dict": self._model.state_dict(), "meta": meta}, path)
         meta_path = path.with_suffix(".json")
         with open(meta_path, "w") as f:

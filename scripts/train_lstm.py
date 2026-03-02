@@ -32,7 +32,7 @@ def main():
     df = pipeline.run()
 
     print(f"Rows: {len(df)}")
-    cols = ["returns", "vix", "credit_spread"]
+    cols = ["returns", "vix", "credit_spread", "yield_curve"]
     for c in cols:
         print(f"  {c}: {'Y' if c in df.columns else 'N (fallback)'}")
 

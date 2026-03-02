@@ -28,10 +28,12 @@ def test_get_ml_features():
     df = pd.DataFrame({"returns": np.random.randn(50) * 0.01, "_stable": True}, index=idx)
     df["vix"] = 18 + np.random.rand(50) * 5
     df["credit_spread"] = 4 + np.random.rand(50)
+    df["yield_curve"] = 0.3 + np.random.rand(50) * 0.2
     out = _get_ml_features(df)
     assert "returns" in out.columns
     assert "vix" in out.columns
     assert "credit_spread" in out.columns
+    assert "yield_curve" in out.columns
     assert len(out) == 50
 
 
@@ -41,8 +43,10 @@ def test_get_ml_features_without_external():
     out = _get_ml_features(df)
     assert "vix" in out.columns
     assert "credit_spread" in out.columns
+    assert "yield_curve" in out.columns
     assert (out["vix"] == 20.0).all()
     assert (out["credit_spread"] == 4.0).all()
+    assert (out["yield_curve"] == 0.5).all()
 
 
 def test_build_sequences():

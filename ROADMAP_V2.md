@@ -293,6 +293,7 @@
 | **PLANNING.md** | ארכיטקטורה מקורית, עקרונות |
 | **STATUS_AND_RECOMMENDATIONS.md** | ניתוח הבעיה והמלצות |
 | **ROADMAP_V2.md** (זה) | סטטוס + תכנון המשך + Roadmap |
+| **IMPROVEMENTS_PROPOSAL.md** | הבעיה, מה לא מיושם, הצעות שיפור מפורטות |
 
 ---
 

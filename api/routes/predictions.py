@@ -96,10 +96,10 @@ def predict(
 
         risk_score = _vol_bucket_to_risk(garch_out["volatility_bucket"])
 
-        # ML Layer (Phase 2B) — probabilistic P(up)/P(down), Logical AND
+        # ML Layer (Phase 2B) — daily only (helps daily, hurts weekly)
         ml_probs = None
         lstm = LSTMPredictor()
-        if lstm.load():
+        if horizon == "daily" and lstm.load():
             ml_probs = lstm.predict_proba(df)
             if ml_probs is not None:
                 should_trade, _ = ensemble_decision(

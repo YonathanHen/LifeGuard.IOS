@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime, timedelta
 
-from .fetchers import fetch_yahoo, fetch_cross_asset, fetch_credit_spread
+from .fetchers import fetch_yahoo, fetch_cross_asset, fetch_macro_data
 from .fetchers.yahoo_finance import resample_to_horizon
 from .preprocessing import preprocess
 from .features import compute_features
@@ -115,35 +115,38 @@ class DataPipeline:
         except Exception:
             pass
 
-        # External Features — Credit Spread (FRED). Same-day available, no publication lag.
+        # External Features — FRED (Credit Spread + Yield Curve)
+        # shift(1): ביום T המודל רואה נתוני T-1 — מניעת Look-ahead bias
         self._fred_available = False
         try:
             if self.end_date is not None:
                 end_d = pd.Timestamp(self.end_date)
                 start_d = end_d - pd.Timedelta(days=365 * 5)
-                credit = fetch_credit_spread(
+                macro = fetch_macro_data(
                     start_date=start_d.strftime("%Y-%m-%d"),
                     end_date=(end_d + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                    series=["credit_spread", "yield_curve"],
                 )
             else:
-                credit = fetch_credit_spread(period=self.period)
-            if not credit.empty:
+                macro = fetch_macro_data(period=self.period, series=["credit_spread", "yield_curve"])
+            if not macro.empty:
                 self._fred_available = True
-                credit = credit.loc[~credit.index.duplicated(keep="last")]
-                # Align timezone: FRED is naive, features may be tz-aware (Yahoo)
-                if credit.index.tz is None and features.index.tz is not None:
-                    credit = credit.copy()
-                    credit.index = credit.index.tz_localize(features.index.tz)
-                elif credit.index.tz is not None and features.index.tz is None:
-                    credit = credit.tz_localize(None)
+                macro = macro.loc[~macro.index.duplicated(keep="last")]
+                if macro.index.tz is None and features.index.tz is not None:
+                    macro = macro.copy()
+                    macro.index = macro.index.tz_localize(features.index.tz)
+                elif macro.index.tz is not None and features.index.tz is None:
+                    macro = macro.tz_localize(None)
                 if self.horizon == "weekly":
-                    credit = credit.resample("W").last().dropna()
+                    macro = macro.resample("W").last().dropna()
                 elif self.horizon == "regime_outlook":
-                    credit = credit.resample("ME").last().dropna()
-                cr_aligned = credit.reindex(features.index).ffill()
-                features["credit_spread"] = cr_aligned
+                    macro = macro.resample("ME").last().dropna()
+                for col in macro.columns:
+                    aligned = macro[col].reindex(features.index).ffill()
+                    aligned = aligned.shift(1)  # T sees T-1 — no look-ahead
+                    features[col] = aligned
             else:
-                pass  # no credit_spread column when FRED unavailable
+                pass
         except Exception:
             pass
 

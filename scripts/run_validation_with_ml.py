@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 """
 SignalFlow — Point-in-Time Validation with ML Layer
-40 תאריכים אקראיים לכל horizon — השוואת Stat Core בלבד vs Stat + ML (Ensemble)
+40 תאריכים אקראיים לכל horizon — השוואת Stat Core בלבד vs Stat + ML (Ensemble).
+
+--significant: רק ימים עם |תשואה| > X% (ברירת מחדל 1%)
 """
 import sys
 import random
+import argparse
 import warnings
 from pathlib import Path
 
@@ -118,7 +121,7 @@ def run_one(symbol: str, horizon: str, as_of_date: str, ml_threshold: float = 0.
 
         ml_probs = None
         lstm = LSTMPredictor()
-        if lstm.load() and len(df) >= 45:
+        if horizon == "daily" and lstm.load() and len(df) >= 45:
             ml_probs = lstm.predict_proba(df)
 
         has_edge_ensemble, _ = ensemble_decision(
@@ -161,15 +164,24 @@ def _summary(results: list) -> tuple:
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--significant", action="store_true", help="Filter to days with |return| >= min_move%")
+    ap.add_argument("--min-move-pct", type=float, default=1.0, help="Min |return|%% for significant (default 1)")
+    ap.add_argument("--n", type=int, default=40, help="Samples per horizon (default 40)")
+    ap.add_argument("--daily-only", action="store_true", help="Run only daily horizon (faster)")
+    args = ap.parse_args()
+
     symbol = "AAPL"
-    n_per_horizon = 40
+    n_per_horizon = max(args.n, 80 if args.significant else 40)
+    horizons = ["daily"] if args.daily_only else HORIZONS
     seed = 42
     ml_threshold = 0.6
 
     random.seed(seed)
     print("=" * 65)
     print("SignalFlow — Point-in-Time Validation (Stat + ML)")
-    print(f"40 dates per horizon | Symbol: {symbol} | ML threshold: {ml_threshold}")
+    mode = f" | SIGNIFICANT days (|ret|>={args.min_move_pct}%)" if args.significant else ""
+    print(f"{n_per_horizon} dates/horizon | Symbol: {symbol}{mode}")
     print("=" * 65)
 
     full = fetch_yahoo(symbol, period="5y")
@@ -181,7 +193,7 @@ def main():
     max_date = dates[-1] - pd.Timedelta(days=45)
     all_results = []
 
-    for horizon in HORIZONS:
+    for horizon in horizons:
         offset = MIN_DATE_OFFSET.get(horizon, 252)
         min_date = dates[offset] if len(dates) > offset else dates[0]
         valid = [d for d in dates if min_date <= d <= max_date]
@@ -211,12 +223,21 @@ def main():
         print("\nToo few valid results overall")
         return 1
 
+    if args.significant:
+        sig_results = [r for r in all_results if abs(r.get("actual_ret_pct", 0)) >= args.min_move_pct]
+        if len(sig_results) < 5:
+            print(f"\nOnly {len(sig_results)} significant days (|ret|>={args.min_move_pct}%). Try --min-move-pct 0.5")
+            sig_results = all_results
+        else:
+            all_results = sig_results
+            print(f"\n--- Filtered to {len(sig_results)} SIGNIFICANT days (|ret|>={args.min_move_pct}%) ---")
+
     stat_t, stat_c, ens_t, ens_c = _summary(all_results)
     stat_acc = stat_c / stat_t * 100 if stat_t > 0 else 0
     ens_acc = ens_c / ens_t * 100 if ens_t > 0 else 0
 
     print("\n" + "=" * 65)
-    print("--- TOTAL (all horizons) ---")
+    print("--- TOTAL (all horizons)" + (" — SIGNIFICANT days only" if args.significant else "") + " ---")
     print(f"  Stat Core only: {stat_t} decisions | {stat_c} correct | {stat_acc:.1f}%")
     print(f"  Stat + ML:      {ens_t} decisions | {ens_c} correct | {ens_acc:.1f}%")
     print("=" * 65)

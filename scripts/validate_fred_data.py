@@ -17,7 +17,7 @@ except ImportError:
     pass
 
 from data.pipeline import DataPipeline
-from data.fetchers.fred_fetcher import fetch_credit_spread
+from data.fetchers.fred_fetcher import fetch_credit_spread, fetch_yield_curve, fetch_macro_data, fetch_yield_curve, fetch_macro_data
 
 
 def main():
@@ -39,23 +39,37 @@ def main():
         print(f"   -> Value range: {credit.min():.2f} - {credit.max():.2f} (typical: 3-8%)")
         print(f"   -> Last 5 values:\n{credit.tail()}")
 
-    # 2. Via Pipeline
-    print("\n2. Pipeline (AAPL, daily, 1y):")
+    # 2. Macro (Credit + Yield Curve)
+    print("\n2. fetch_macro_data (credit_spread + yield_curve):")
+    macro = fetch_macro_data(period="1y")
+    if macro.empty:
+        print("   -> Empty")
+    else:
+        print(f"   -> Columns: {list(macro.columns)}")
+        if "yield_curve" in macro.columns:
+            yc = macro["yield_curve"].dropna()
+            if len(yc) > 0:
+                print(f"   -> yield_curve range: {yc.min():.2f} - {yc.max():.2f}")
+
+    # 3. Via Pipeline (with shift(1) for look-ahead prevention)
+    print("\n3. Pipeline (AAPL, daily, 1y):")
     try:
         p = DataPipeline("AAPL", "daily", period="1y")
         df = p.run()
         print(f"   -> is_fred_available: {p.is_fred_available()}")
-        if "credit_spread" in df.columns:
-            cr = df["credit_spread"].dropna()
-            if len(cr) == 0:
-                print("   -> credit_spread: all NaN")
-            else:
-                print(f"   -> credit_spread: {len(cr)} non-null rows")
-                print(f"   -> Range: {cr.min():.2f} - {cr.max():.2f}")
-                print("\n   Last 10 rows (returns | credit_spread):")
-                print(df[["returns", "credit_spread"]].tail(10).to_string())
+        fred_cols = [c for c in ["credit_spread", "yield_curve"] if c in df.columns]
+        if fred_cols:
+            for c in fred_cols:
+                s = df[c].dropna()
+                if len(s) == 0:
+                    print(f"   -> {c}: all NaN")
+                else:
+                    print(f"   -> {c}: {len(s)} non-null, range {s.min():.2f} - {s.max():.2f}")
+            print("\n   Last 5 rows (returns | credit_spread | yield_curve):")
+            disp = ["returns"] + [c for c in fred_cols if c in df.columns]
+            print(df[disp].tail(5).to_string())
         else:
-            print("   -> credit_spread: column missing (FRED unavailable)")
+            print("   -> FRED columns missing (FRED unavailable)")
     except Exception as e:
         print(f"   -> Error: {e}")
 

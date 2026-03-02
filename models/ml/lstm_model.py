@@ -30,19 +30,21 @@ def _label_from_forward_return(forward_ret: float) -> int:
     return 1  # flat
 
 
+ML_FEATURE_COLS = ["returns", "vix", "credit_spread", "yield_curve"]
+FEATURE_FALLBACKS = {"vix": 20.0, "credit_spread": 4.0, "yield_curve": 0.5}
+
+
 def _get_ml_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Extract ML-ready features. Fills missing external features with median."""
+    """Extract ML-ready features. Fills missing external with fallbacks."""
     out = pd.DataFrame(index=df.index)
     out["returns"] = df["returns"]
-    if "vix" in df.columns:
-        out["vix"] = df["vix"].ffill().fillna(20.0)  # fallback if gap
-    else:
-        out["vix"] = 20.0  # placeholder when VIX unavailable
-    if "credit_spread" in df.columns:
-        cr = df["credit_spread"].ffill()
-        out["credit_spread"] = cr.fillna(cr.median() if cr.notna().any() else 4.0)
-    else:
-        out["credit_spread"] = 4.0
+    for col in ["vix", "credit_spread", "yield_curve"]:
+        if col in df.columns:
+            s = df[col].ffill()
+            fallback = FEATURE_FALLBACKS.get(col, 0.0)
+            out[col] = s.fillna(s.median() if s.notna().any() else fallback)
+        else:
+            out[col] = FEATURE_FALLBACKS.get(col, 0.0)
     return out.dropna(how="all").ffill().dropna()
 
 
@@ -129,7 +131,9 @@ class LSTMPredictor:
             dtype=np.int64,
         )
 
-        feat = ml_df[["returns", "vix", "credit_spread"]].values.astype(np.float32)
+        cols = [c for c in ML_FEATURE_COLS if c in ml_df.columns]
+        self._feature_cols = cols
+        feat = ml_df[cols].values.astype(np.float32)
         self._n_features = feat.shape[1]
 
         # Scale
@@ -182,9 +186,11 @@ class LSTMPredictor:
         if self._model is None:
             return
         path = self._ensure_storage()
+        cols = getattr(self, "_feature_cols", ML_FEATURE_COLS)
         meta = {
             "lookback": self.lookback,
             "n_features": self._n_features,
+            "feature_cols": cols,
             "scaler_mean": self._scaler_mean.tolist() if self._scaler_mean is not None else None,
             "scaler_std": self._scaler_std.tolist() if self._scaler_std is not None else None,
         }
@@ -205,6 +211,7 @@ class LSTMPredictor:
             meta = ckpt.get("meta", {})
             self.lookback = meta.get("lookback", self.lookback)
             self._n_features = meta.get("n_features", 3)
+            self._feature_cols = meta.get("feature_cols", ["returns", "vix", "credit_spread"])
             self._scaler_mean = np.array(meta["scaler_mean"]) if meta.get("scaler_mean") else None
             self._scaler_std = np.array(meta["scaler_std"]) if meta.get("scaler_std") else None
             self._model = LSTMModule(
@@ -229,7 +236,13 @@ class LSTMPredictor:
         if len(ml_df) < self.lookback:
             return None
 
-        feat = ml_df[["returns", "vix", "credit_spread"]].values.astype(np.float32)
+        cols = getattr(self, "_feature_cols", ML_FEATURE_COLS)
+        cols = [c for c in cols if c in ml_df.columns]
+        if not cols:
+            return None
+        feat = ml_df[cols].values.astype(np.float32)
+        if feat.shape[1] != self._n_features:
+            return None
         if self._scaler_mean is not None and self._scaler_std is not None:
             feat = (feat - self._scaler_mean) / self._scaler_std
 

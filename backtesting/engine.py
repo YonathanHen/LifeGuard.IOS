@@ -449,13 +449,13 @@ class BacktestEngine:
         decisions: Optional[List[tuple]] = None,
         next_returns: Optional[List[float]] = None,
         refit_every: Optional[int] = None,
-    ) -> Dict[str, int]:
+    ) -> Dict:
         """
         Days when Stat said Long but ML blocked:
-        - Saved Losses: ML blocked, actual return < 0
+        - Saved Losses: ML blocked, actual return < 0 (we avoided these losses)
         - Missed Opportunities: ML blocked, actual return > 0
+        Expected Value: sum_saved - sum_missed — if positive, ML proves as risk agent.
         Optional: pass pre-built cache from run_stability to avoid recompute.
-        Uses disaster_threshold when ml_negative_filter=True.
         """
         if self.ml_negative_filter:
             from models.ml.ensemble import ensemble_decision_negative_filter
@@ -468,8 +468,9 @@ class BacktestEngine:
             dec, rets, _, ref = self._build_decision_cache(period)
         else:
             dec, rets, ref = decisions, next_returns, refit_every
-        saved_losses = 0
-        missed_opps = 0
+
+        blocked_loss_returns: List[float] = []
+        missed_gain_returns: List[float] = []
 
         for j, (has_edge, direction, ml_probs) in enumerate(dec):
             if not (has_edge and direction == "up"):
@@ -485,11 +486,24 @@ class BacktestEngine:
                 has_ens, _ = ensemble_decision(has_edge, direction, ml_probs, th)
             if has_ens:
                 continue
-            # ML blocked - Stat would have gone Long
             ret = rets[j]
             if ret < 0:
-                saved_losses += 1
+                blocked_loss_returns.append(ret)
             else:
-                missed_opps += 1
+                missed_gain_returns.append(ret)
 
-        return {"saved_losses": saved_losses, "missed_opportunities": missed_opps}
+        sum_saved = -sum(blocked_loss_returns) if blocked_loss_returns else 0.0
+        sum_missed = sum(missed_gain_returns) if missed_gain_returns else 0.0
+        net_ev = sum_saved - sum_missed
+        mean_blocked = sum(blocked_loss_returns) / len(blocked_loss_returns) if blocked_loss_returns else 0.0
+        mean_missed = sum(missed_gain_returns) / len(missed_gain_returns) if missed_gain_returns else 0.0
+
+        return {
+            "saved_losses": len(blocked_loss_returns),
+            "missed_opportunities": len(missed_gain_returns),
+            "sum_saved": sum_saved,
+            "sum_missed": sum_missed,
+            "net_ev": net_ev,
+            "mean_blocked_loss": mean_blocked,
+            "mean_missed_gain": mean_missed,
+        }

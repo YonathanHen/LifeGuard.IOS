@@ -4,8 +4,10 @@ SignalFlow — Backtest with ML: Stat vs Stat+ML
 Runs backtest, compares performance, Threshold Stability (±0.02), Regime Sensitivity.
 Outputs: Sharpe, Drawdown, Exposure, Decision Density, Equity Curve (optional plot).
 """
+import json
 import sys
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,6 +35,68 @@ def _print_result(name: str, r: BacktestResult, verbose: bool = True):
             print(f"    {rname}: Sharpe={sub.sharpe_ratio:.2f} DD={sub.max_drawdown:.1%} Trades={sub.n_trades}")
 
 
+def _read_model_meta() -> dict:
+    """Read LSTM model metadata (lookback etc.) from storage."""
+    meta_path = Path(__file__).parent.parent / "storage" / "lstm_model.json"
+    if meta_path.exists():
+        try:
+            with open(meta_path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_backtest_run(
+    params: dict,
+    r_stat: BacktestResult,
+    r_ml: BacktestResult | None,
+    registry_path: Path,
+    label: str | None,
+):
+    """Append run to storage/backtest_runs.json."""
+    meta = _read_model_meta()
+    entry = {
+        "date": datetime.utcnow().isoformat() + "Z",
+        "label": label or "",
+        "params": params,
+        "model": {"lookback": meta.get("lookback"), "n_features": meta.get("n_features"), "train_date": meta.get("train_date")},
+        "stat": {
+            "sharpe": round(r_stat.sharpe_ratio, 4),
+            "max_dd": round(r_stat.max_drawdown, 4),
+            "total_return": round(r_stat.total_return, 4),
+            "n_trades": r_stat.n_trades,
+            "hit_rate": round(r_stat.hit_rate, 4),
+            "exposure_pct": round(r_stat.exposure_pct, 2),
+        },
+        "stat_ml": None,
+    }
+    if r_ml is not None:
+        entry["stat_ml"] = {
+            "sharpe": round(r_ml.sharpe_ratio, 4),
+            "max_dd": round(r_ml.max_drawdown, 4),
+            "total_return": round(r_ml.total_return, 4),
+            "n_trades": r_ml.n_trades,
+            "hit_rate": round(r_ml.hit_rate, 4),
+            "exposure_pct": round(r_ml.exposure_pct, 2),
+        }
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if registry_path.exists():
+        try:
+            with open(registry_path) as f:
+                data = json.load(f)
+        except Exception:
+            pass
+    runs = data.get("runs", [])
+    runs.append(entry)
+    data["runs"] = runs
+    data["_last_updated"] = entry["date"]
+    with open(registry_path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"\n[Saved run to {registry_path}]")
+
+
 def _decision_density(r: BacktestResult, period_years: float) -> dict:
     """Compute N Trades/Year, Avg Days in Trade, Avg Return per Trade."""
     n_trades = r.n_trades
@@ -55,6 +119,7 @@ def main():
     ap = argparse.ArgumentParser(description="SignalFlow Backtest: Stat vs Stat+ML")
     ap.add_argument("--period", default="3y", help="Backtest period (default 3y)")
     ap.add_argument("--symbol", default="AAPL", help="Symbol")
+    ap.add_argument("--horizon", choices=["daily", "weekly", "regime_outlook"], default="daily", help="Horizon (default daily). ML only for daily.")
     ap.add_argument("--no-ml", action="store_true", help="Run Stat only (no ML comparison)")
     ap.add_argument("--no-costs", action="store_true", help="Disable commission/slippage")
     ap.add_argument("--stability", action="store_true", help="Run threshold stability (pre-compute once)")
@@ -64,6 +129,7 @@ def main():
     ap.add_argument("--no-negative-filter", action="store_true", help="Use legacy AND mode instead of Negative Filter (default: Negative Filter)")
     ap.add_argument("--disaster-threshold", type=float, default=0.80, help="Negative Filter: block when P(down) > this (default 0.80)")
     ap.add_argument("--save-equity", type=str, help="Save equity curves to CSV")
+    ap.add_argument("--label", type=str, help="Label for saved run (e.g. legacy_and_61pct)")
     ap.add_argument("--plot", action="store_true", help="Plot equity curve comparison (requires matplotlib)")
     args = ap.parse_args()
 
@@ -75,12 +141,12 @@ def main():
     print("=" * 65)
     print("SignalFlow — Backtest with ML")
     print("=" * 65)
-    print(f"Symbol: {args.symbol} | Period: {args.period} | Costs: {'off' if args.no_costs else '5+3 bps'}")
+    print(f"Symbol: {args.symbol} | Period: {args.period} | Horizon: {args.horizon} | Costs: {'off' if args.no_costs else '5+3 bps'}")
 
     # Stat only
     engine_stat = BacktestEngine(
         symbol=args.symbol,
-        horizon="daily",
+        horizon=args.horizon,
         use_ml=False,
         commission_bps=commission,
         slippage_bps=slippage,
@@ -88,11 +154,14 @@ def main():
     r_stat = engine_stat.run(period=args.period)
     _print_result("Stat Core only", r_stat)
 
-    if not args.no_ml:
+    if args.horizon != "daily" and not args.no_ml:
+        print("\n[ML only for daily horizon — use --horizon daily for Stat+ML]")
+
+    if not args.no_ml and args.horizon == "daily":
         neg_filter = not args.no_negative_filter  # Default: Negative Filter (Sweet spot 0.80)
         engine_ml = BacktestEngine(
             symbol=args.symbol,
-            horizon="daily",
+            horizon=args.horizon,
             use_ml=True,
             ml_threshold=0.6,
             ml_negative_filter=neg_filter,
@@ -167,6 +236,13 @@ def main():
             print(f"--- Error Type (Stat Long, ML blocked @ {th_desc}) ---")
             print(f"  Saved Losses (ML blocked, price fell):      {err['saved_losses']}")
             print(f"  Missed Opportunities (ML blocked, price rose): {err['missed_opportunities']}")
+            print(f"  Sum Saved (losses avoided):                 {err['sum_saved']:.4f} ({err['sum_saved']*100:.2f}%)")
+            print(f"  Sum Missed (gains forgone):                  {err['sum_missed']:.4f} ({err['sum_missed']*100:.2f}%)")
+            print(f"  Net EV of ML Filter (saved - missed):       {err['net_ev']:.4f} ({err['net_ev']*100:.2f}%)")
+            if err['saved_losses']:
+                print(f"  Mean blocked loss (avg loss avoided):      {err['mean_blocked_loss']*100:.2f}%")
+            if err['missed_opportunities']:
+                print(f"  Mean missed gain (avg gain forgone):       {err['mean_missed_gain']*100:.2f}%")
         else:
             r_ml = engine_ml.run(period=args.period)
             _print_result(ml_label, r_ml)
@@ -209,6 +285,26 @@ def main():
                 print(f"Plot saved to {out_path}")
             except ImportError:
                 print("matplotlib not installed — skip --plot")
+
+        # Auto-save every run
+        neg_filter = not args.no_negative_filter
+        params = {
+            "symbol": args.symbol,
+            "period": args.period,
+            "horizon": args.horizon,
+            "commission_bps": commission,
+            "slippage_bps": slippage,
+            "mode": "negative_filter" if neg_filter else "legacy_and",
+            "disaster_threshold": args.disaster_threshold if neg_filter else None,
+            "ml_threshold": 0.6,
+        }
+        registry_path = Path(__file__).parent.parent / "storage" / "backtest_runs.json"
+        _save_backtest_run(params, r_stat, r_ml, registry_path, args.label)
+    else:
+        # Auto-save (Stat only)
+        params = {"symbol": args.symbol, "period": args.period, "horizon": args.horizon, "commission_bps": commission, "slippage_bps": slippage}
+        registry_path = Path(__file__).parent.parent / "storage" / "backtest_runs.json"
+        _save_backtest_run(params, r_stat, None, registry_path, args.label)
 
     print("\n" + "=" * 65)
     return 0

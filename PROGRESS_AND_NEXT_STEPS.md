@@ -4,6 +4,52 @@
 
 ---
 
+## סיכום מצב נוכחי והחסם
+
+### איפה אנחנו עכשיו
+
+| רכיב | מצב |
+|------|-----|
+| **ארכיטקטורה** | Stat-Led + ML Safeguard (Negative Filter @ 0.80) — מוכנה לייצור |
+| **מודל LSTM** | lookback 40, אומן על 5y — גיבוי ב־`lstm_model_backup.pt` |
+| **Backtest** | Stat Core: Sharpe ~1.73, Max DD -11.3%, Hit 58%. Stat+ML דומה (ML כמעט לא מסנן בתנאים האחרונים) |
+| **תצורת Success** | Legacy AND: Hit 61.4%, Sharpe 2.12, DD -3.6% — מושגת רק ב־`--no-negative-filter` |
+| **Run Registry** | `storage/backtest_runs.json` — שמירה אוטומטית בכל הרצה |
+
+### החסם העיקרי — למה מסחר טוב שעובד עדיין לא בידינו
+
+| חסם | הסבר | סטטוס |
+|-----|------|--------|
+| **1. חוסר הוכחה בזמן אמת** | כל התוצאות הן backtest היסטורי. אין Paper Trading רציף, אין אימות שזה עובד ב־2025–2026. | **חסימה מבצעית** |
+| **2. Alpha Decay** | המודל אומן על היסטוריה. תנאי השוק משתנים — בלי retrain תקופתי ה-ML מאבד ערך. Retrain קודם החמיר (DD 18% במקום 12%). | **חסימה אסטרטגית** |
+| **3. אי-עקביות בתוצאות** | Success Config (Sharpe 0.49, Exposure 45%) מול backtest אחרון (Sharpe 1.7, Exposure 32%) — ייתכן הבדלי תקופה/נתונים. | **חוסר וודאות** |
+
+### מה נדרש כדי להגיע למסחר טוב שעובד
+
+1. **מבצעי:** הרצת Paper Trading 3–6 חודשים — אימות שהמערכת מחזירה החלטות סבירות בלי כסף אמיתי. עם מדדי אמון (Decision Consistency, Blocked Loss Rate, Regret) — לא רק PnL.
+2. **אסטרטגי:** Walk-Forward Retrain מתוזמן (רבעוני), עם Model Promotion קפדני (Sharpe ≥ 0.49, DD ≤ 12%).
+3. **תיעוד:** שמירה אוטומטית בכל הרצה ל־`storage/backtest_runs.json`.
+
+### Error Type Analysis + Expected Value (הושלם)
+
+ב־`--stability` המערכת מציגה כעת:
+
+| מדד | משמעות |
+|-----|--------|
+| **Sum Saved** | סכום ההפסדים שנמנעו (ML חסם, מחיר ירד) |
+| **Sum Missed** | סכום הרווחים שפוספסו |
+| **Net EV** | Sum Saved − Sum Missed — אם חיובי, ה-ML מוכיח את עצמו כסוכן סיכון |
+| **Mean blocked loss** | ממוצע הפסד שנחסם (האם ML חוסם הרבה קטנים או מעט עם זנב שמן?) |
+
+### עתידי (Phase 2)
+
+| נושא | מתי |
+|------|-----|
+| **מדדי Paper Trading** | Decision Consistency, Blocked Loss Rate, Regret — מדידת אמינות התנהגותית בזמן אמת |
+| **Dual-Track ML** | Anchor (5–7y) + Scout (12–18mo) — רק אחרי שיש נתוני Paper Trading אמיתיים |
+
+---
+
 ## חלק א׳ — מה עשינו עד כה
 
 ### 1.1 רקע הבעיה
@@ -151,6 +197,9 @@
 
 | מסמך | תפקיד |
 |------|--------|
+| **ALGORITHM_SPEC.md** | מפרט אלגוריתם: כל מרכיבים ופרמטרים |
+| **RESULTS_SUMMARY.md** | סיכום מרוכז של כל התוצאות (Backtest + Validation) |
+| **storage/backtest_runs.json** | היסטוריית הרצות (שמירה אוטומטית) |
 | **TRADING_READINESS_PLAN.md** | תוכנית מוכנות למסחר |
 | **ROADMAP_V2.md** | תכנון כללי |
 | **IMPROVEMENTS_PROPOSAL.md** | שיפורים מפורטים |
@@ -165,8 +214,15 @@
 # Calibration (כ־2 דקות)
 python scripts/calibrate_ml_threshold.py
 
-# Backtest Stat vs Stat+ML (default: Negative Filter @ 0.80)
+# Backtest Stat vs Stat+ML (default: daily, Negative Filter @ 0.80)
 python scripts/run_backtest_with_ml.py --period 3y
+
+# Backtest weekly / regime (Stat only — ML יומי בלבד)
+python scripts/run_backtest_with_ml.py --period 5y --horizon weekly
+python scripts/run_backtest_with_ml.py --period 6y --horizon regime_outlook
+
+# Validation — daily + weekly + regime (תוצאות לכל horizon)
+python scripts/run_validation_with_ml.py
 
 # Disaster threshold stability (0.75–0.85)
 python scripts/run_backtest_with_ml.py --period 2y --stability
@@ -180,8 +236,62 @@ python scripts/walk_forward_retrain.py
 # Check if model stale (older than 90 days)
 python scripts/walk_forward_retrain.py --check
 
+# Restore old model after bad retrain (e.g. DD 18% instead of 12%)
+python scripts/walk_forward_retrain.py --restore
+
 # Custom window / end date
 python scripts/walk_forward_retrain.py --period 5y --end-date 2025-12-31
+```
+
+### הגדרות ייצור (Production) — Success Config (lock 0.80)
+
+| משתנה | ערך | תיאור |
+|-------|-----|--------|
+| `ML_NEGATIVE_FILTER_THRESHOLD` | **0.80** | סף P(down) — חוסם טרייד רק כש־P(down) > 0.80 (Success lock) |
+| מודל פעיל | `storage/lstm_model.pt` | מודל היציב (lookback 40) — Sharpe 0.49, DD 12%, Exposure 45% |
+| גיבוי | `lstm_model_backup.pt` | גיבוי לפני retrain; `--restore` מחזיר את ה־Success config |
+
+### איך להגיע ל-Hit Rate ~61–64% (Legacy AND)
+
+ה־**61.4%** הושגו ב־**Legacy AND** — רק כשהסטט נותן Edge **וגם** ה-ML מחזיר P(up) ≥ 0.60. זה מסנן הרבה טריידים (70 במקום 153), אבל משאיר בעיקר טריידים חזקים.
+
+| מדד | Stat Core | Stat+ML (Legacy AND) |
+|-----|-----------|----------------------|
+| **Hit Rate** | 58.2% | **61.4%** |
+| **Sharpe** | 1.73 | **2.12** |
+| **Max DD** | -11.3% | **-3.6%** |
+| **N Trades** | 153 | 70 |
+| **Exposure** | 32.3% | 14.8% |
+
+**הרצה:**
+```bash
+python scripts/run_backtest_with_ml.py --period 3y --no-negative-filter
+```
+
+`--no-negative-filter` = מצב Legacy AND (P_up ≥ 0.60), במקום Negative Filter (P_down > 0.80).
+
+### שמירת תוצאות ופרמטרים — Run Registry
+
+**שמירה אוטומטית** בכל הרצת backtest ל־`storage/backtest_runs.json`:
+
+```bash
+# עם תווית מותאמת
+python scripts/run_backtest_with_ml.py --period 3y --no-negative-filter --label legacy_and_61pct
+python scripts/run_backtest_with_ml.py --period 3y --label neg_filter_080
+```
+
+נשמרים:
+- תאריך, תווית
+- פרמטרים: symbol, period, mode (negative_filter / legacy_and), threshold, lookback
+- תוצאות: Sharpe, Max DD, Hit Rate, Exposure, N Trades
+
+**צפייה ב־runs:**
+```bash
+# Windows
+type storage\backtest_runs.json
+
+# Linux/Mac
+cat storage/backtest_runs.json
 ```
 
 ### תזמון (Windows Task Scheduler / Linux cron)
@@ -192,6 +302,40 @@ python scripts/walk_forward_retrain.py --period 5y --end-date 2025-12-31
 # Windows: Task Scheduler — create task, trigger Monthly, Day 1, Run:
 #   python C:\path\to\SignalFlow\scripts\walk_forward_retrain.py
 ```
+
+---
+
+## נספח ב' — לקחי Retrain ו־Model Promotion
+
+### תוצאות Retrain
+
+| מצב | Stat+ML Sharpe | Max DD | Exposure |
+|-----|----------------|--------|----------|
+| **מודל ישן** (יציב) | 0.49 | -12% | 45% |
+| **מודל חדש** (retrain) | 0.31 | -18.2% | 56% |
+
+המודל החדש הפך ל"חותמת גומי" — איבד דיפרנציאציה, כמעט לא מסנן.
+
+### מפרט המודל הישן (היציב)
+
+| פרמטר | ערך | תיאור |
+|-------|-----|--------|
+| **Lookback** | 60 | חלון זמנים לאחור (במקום 40) |
+| **Features** | returns, vix, credit_spread, yield_curve | וקטור קלט מלא |
+| **Dropout** | 0.2–0.3 | Regularization |
+| **אימון** | 5y, משטרי שוק שונים | פרספקטיבה רחבה |
+
+לאימון עם lookback 60:
+```bash
+python scripts/walk_forward_retrain.py --lookback 60
+```
+
+### מנגנונים שהוספנו
+
+1. **Model Promotion** — מודל חדש מחליף את הישן רק אם Backtest (3y) מציג: Sharpe ≥ 0.49 ו־DD ≤ 12%.
+2. **Early Stopping** — עצירה כשהעלאת Val Loss (patience 15).
+3. **Regularization** — Dropout 0.3 (במקום 0.2).
+4. **Restore** — `--restore` מחזיר מודל וגם `lstm_train_info.json` מהגיבוי.
 
 ---
 

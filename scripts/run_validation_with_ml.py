@@ -5,10 +5,12 @@ SignalFlow — Point-in-Time Validation with ML Layer
 
 --significant: רק ימים עם |תשואה| > X% (ברירת מחדל 1%)
 """
+import json
 import sys
 import random
 import argparse
 import warnings
+from datetime import datetime
 from pathlib import Path
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -192,6 +194,7 @@ def main():
     dates = list(full.index)
     max_date = dates[-1] - pd.Timedelta(days=45)
     all_results = []
+    per_horizon = {}
 
     for horizon in horizons:
         offset = MIN_DATE_OFFSET.get(horizon, 252)
@@ -217,6 +220,11 @@ def main():
         print(f"  Stat Core only: {stat_t} decisions | {stat_c} correct | {stat_acc:.1f}%")
         print(f"  Stat + ML:      {ens_t} decisions | {ens_c} correct | {ens_acc:.1f}%")
 
+        per_horizon[horizon] = {
+            "stat_total": stat_t, "stat_correct": stat_c, "stat_acc_pct": round(stat_acc, 1),
+            "ens_total": ens_t, "ens_correct": ens_c, "ens_acc_pct": round(ens_acc, 1),
+            "valid": len(results),
+        }
         all_results.extend(results)
 
     if len(all_results) < 10:
@@ -241,6 +249,30 @@ def main():
     print(f"  Stat Core only: {stat_t} decisions | {stat_c} correct | {stat_acc:.1f}%")
     print(f"  Stat + ML:      {ens_t} decisions | {ens_c} correct | {ens_acc:.1f}%")
     print("=" * 65)
+
+    entry = {
+        "date": datetime.utcnow().isoformat() + "Z",
+        "symbol": symbol,
+        "n_per_horizon": n_per_horizon,
+        "horizons": list(horizons),
+        "per_horizon": per_horizon,
+        "total": {"stat_total": stat_t, "stat_correct": stat_c, "stat_acc_pct": round(stat_acc, 1), "ens_total": ens_t, "ens_correct": ens_c, "ens_acc_pct": round(ens_acc, 1)},
+        "significant": args.significant,
+    }
+    registry = Path(__file__).parent.parent / "storage" / "validation_runs.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    data = {"runs": [], "_comment": "Validation runs - accuracy per horizon"}
+    if registry.exists():
+        try:
+            with open(registry) as f:
+                data = json.load(f)
+        except Exception:
+            pass
+    data.setdefault("runs", []).append(entry)
+    data["_last_updated"] = entry["date"]
+    with open(registry, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"\n[Saved to {registry}]")
     return 0
 
 

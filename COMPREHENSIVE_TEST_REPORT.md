@@ -60,10 +60,17 @@
 2. **תקופת Paper** — 6 חודשים מתחת ל־מינימום 3 חודשים ל־Gate 3; מומלץ להמשיך ל־3 חודשים לפחות.
 3. **FRED API** — הגבלת קצב; מומלץ להמתין ולהריץ Error Type Analysis מאוחר יותר.
 
+### FRED Cache (חדש)
+
+הוסף cache מקומי לנתוני FRED ב־`storage/fred_cache/`:
+- TTL 24 שעות לנתוני live
+- נתונים היסטוריים נשמרים ללא תפוגה
+- Fallback ל-cache כשהממשק נכשל (rate limit)
+
 ### הרצות מומלצות להמשך
 
 ```bash
-# Backtest 5y עם Error Type Analysis (אחרי reset FRED)
+# Backtest 5y עם Error Type Analysis (המשתמש ב-FRED cache)
 python scripts/run_backtest_with_ml.py --period 5y --stability
 
 # הרצה יומית

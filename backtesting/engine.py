@@ -193,7 +193,8 @@ class BacktestEngine:
             positions.append(pos)
             regimes.append(regime_name)
 
-            ret = pos * returns.iloc[i + 1]
+            pos_mult = 0.5 if regime_name == "trend" and pos == 1 else 1.0
+            ret = pos * pos_mult * returns.iloc[i + 1]
             if round_trip_cost > 0 and pos == 1 and (len(positions) == 1 or positions[-2] == 0):
                 ret -= round_trip_cost
             realized_returns.append(ret)
@@ -265,15 +266,16 @@ class BacktestEngine:
         return float(dd.min())
 
     def _build_decision_cache(
-        self, period: str
+        self, period: str, end_date: Optional[str] = None
     ) -> tuple:
         """
         Pre-compute once: per-refit-day (has_edge, direction, ml_probs), returns series.
         Returns (daily_decisions, next_returns, round_trip_cost).
-        daily_decisions: list of (has_edge, direction, ml_probs) for each backtest day.
-        On refit days we compute; on non-refit we carry over previous.
+        end_date: optional YYYY-MM-DD for point-in-time (e.g. paper trading period end).
         """
-        pipeline = DataPipeline(self.symbol, self.horizon, period=period)
+        pipeline = DataPipeline(
+            self.symbol, self.horizon, period=period, end_date=end_date
+        )
         df = pipeline.run()
         returns = df["returns"].dropna()
         if len(returns) < self.train_min_days + 50:
@@ -295,6 +297,7 @@ class BacktestEngine:
 
         decisions: List[tuple] = []
         last_has_edge, last_direction, last_ml_probs = False, "flat", None
+        last_regime = "unknown"
 
         for i in range(self.train_min_days, len(returns) - 1):
             dt_i = returns.index[i]
@@ -309,8 +312,8 @@ class BacktestEngine:
                     garch_out = garch.predict_next()
                     has_edge = has_statistical_edge(arima_out, garch_out)
 
-                    regime = RegimeDetector(horizon=self.horizon).fit(train)
-                    _, regime_stable = regime.predict(train)
+                    regime_det = RegimeDetector(horizon=self.horizon).fit(train)
+                    last_regime, regime_stable = regime_det.predict(train)
                     if not regime_stable:
                         has_edge = False
 
@@ -330,7 +333,7 @@ class BacktestEngine:
                 except Exception:
                     last_has_edge, last_direction, last_ml_probs = False, "flat", None
 
-            decisions.append((last_has_edge, last_direction, last_ml_probs))
+            decisions.append((last_has_edge, last_direction, last_ml_probs, last_regime))
 
         next_returns = [
             float(returns.iloc[self.train_min_days + j + 1])
@@ -356,11 +359,15 @@ class BacktestEngine:
             from models.ml.ensemble import ensemble_decision
             th = ml_threshold
 
+        TREND_POSITION_MULT = 0.5  # Gemini: reduce size 50% in Trend regime (weak Sharpe)
+
         positions: List[int] = []
         realized: List[float] = []
         prev_pos = 0
 
-        for j, (has_edge, direction, ml_probs) in enumerate(decisions):
+        for j, dec in enumerate(decisions):
+            has_edge, direction, ml_probs = dec[0], dec[1], dec[2]
+            regime = dec[3] if len(dec) >= 4 else "unknown"
             is_refit = j % refit_every == 0
             if is_refit:
                 if has_edge and direction == "up":
@@ -375,7 +382,8 @@ class BacktestEngine:
                     prev_pos = 0
 
             positions.append(prev_pos)
-            ret = prev_pos * next_returns[j]
+            pos_mult = TREND_POSITION_MULT if regime == "trend" and prev_pos == 1 else 1.0
+            ret = prev_pos * pos_mult * next_returns[j]
             if round_trip_cost > 0 and prev_pos == 1 and (j == 0 or positions[j - 1] == 0):
                 ret -= round_trip_cost
             realized.append(ret)
@@ -407,13 +415,15 @@ class BacktestEngine:
         period: str,
         thresholds: List[float],
         primary_threshold: Optional[float] = None,
+        end_date: Optional[str] = None,
     ) -> Tuple[pd.DataFrame, Optional[BacktestResult], Tuple[List, List, int]]:
         """
         Pre-compute decisions once, then run backtest for each threshold.
         Returns (DataFrame, primary_result, cache) — cache for error_type_analysis.
+        end_date: optional YYYY-MM-DD for paper trading period.
         """
         decisions, next_returns, round_trip_cost, refit_every = self._build_decision_cache(
-            period
+            period, end_date=end_date
         )
         cache = (decisions, next_returns, refit_every)
         rows = []
@@ -449,6 +459,7 @@ class BacktestEngine:
         decisions: Optional[List[tuple]] = None,
         next_returns: Optional[List[float]] = None,
         refit_every: Optional[int] = None,
+        end_date: Optional[str] = None,
     ) -> Dict:
         """
         Days when Stat said Long but ML blocked:
@@ -465,14 +476,15 @@ class BacktestEngine:
             th = ml_threshold
 
         if decisions is None or next_returns is None or refit_every is None:
-            dec, rets, _, ref = self._build_decision_cache(period)
+            dec, rets, _, ref = self._build_decision_cache(period, end_date=end_date)
         else:
             dec, rets, ref = decisions, next_returns, refit_every
 
         blocked_loss_returns: List[float] = []
         missed_gain_returns: List[float] = []
 
-        for j, (has_edge, direction, ml_probs) in enumerate(dec):
+        for j, d in enumerate(dec):
+            has_edge, direction, ml_probs = d[0], d[1], d[2]
             if not (has_edge and direction == "up"):
                 continue
             is_refit = j % ref == 0
@@ -497,10 +509,14 @@ class BacktestEngine:
         net_ev = sum_saved - sum_missed
         mean_blocked = sum(blocked_loss_returns) / len(blocked_loss_returns) if blocked_loss_returns else 0.0
         mean_missed = sum(missed_gain_returns) / len(missed_gain_returns) if missed_gain_returns else 0.0
+        n_blocked = len(blocked_loss_returns)
+        n_missed = len(missed_gain_returns)
+        blocked_loss_rate = n_blocked / (n_blocked + n_missed) if (n_blocked + n_missed) > 0 else 0.0
 
         return {
-            "saved_losses": len(blocked_loss_returns),
-            "missed_opportunities": len(missed_gain_returns),
+            "saved_losses": n_blocked,
+            "missed_opportunities": n_missed,
+            "blocked_loss_rate": blocked_loss_rate,
             "sum_saved": sum_saved,
             "sum_missed": sum_missed,
             "net_ev": net_ev,

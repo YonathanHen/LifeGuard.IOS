@@ -165,7 +165,7 @@ python scripts/export_baseline.py
 
 **לשחזר קוד:**
 ```powershell
-git checkout b66513a   # או ה-commit שב-baseline_config.json
+git checkout b2217c8   # או 9b8283e — המצב המעודכן (FRED cache, Trend sizing, baseline)
 ```
 
 ---

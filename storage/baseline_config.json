@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline configuration for full reproducibility. Freeze: 2026-03-03",
-  "git_commit": "0b1adf7",
+  "git_commit": "f938dd3",
   "created": "2026-03-03",
   "algorithm": {
     "mode": "negative_filter",

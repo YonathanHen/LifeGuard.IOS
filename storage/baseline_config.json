@@ -1,35 +1,39 @@
 {
-  "_comment": "Baseline configuration for full reproducibility. Freeze: 2026-03-03",
-  "git_commit": "f938dd3",
-  "created": "2026-03-03",
+  "_comment": "Baseline configuration for full reproducibility.",
+  "git_commit": "8bbe701eec81a05a02a3fb26f2c4c76d509ee492",
+  "created": "2026-03-03T14:37:44Z",
   "algorithm": {
     "mode": "negative_filter",
-    "disaster_threshold": 0.80,
+    "disaster_threshold": 0.8,
     "ml_threshold": 0.6,
     "commission_bps": 5.0,
     "slippage_bps": 3.0,
     "train_min_days": 252,
     "refit_every": 1,
-    "arima_order": [2, 0, 2]
+    "arima_order": [
+      2,
+      0,
+      2
+    ]
   },
   "rules": {
     "liquidity_min_volume": 2000000,
-    "cooldown_min_prob_trigger": 0.8,
-    "trend_position_mult": 0.5
+    "cooldown_min_prob_trigger": 0.8
   },
   "model": {
     "lookback": 40,
     "n_features": 4,
-    "feature_cols": ["returns", "vix", "credit_spread", "yield_curve"],
+    "feature_cols": [
+      "returns",
+      "vix",
+      "credit_spread",
+      "yield_curve"
+    ],
     "train_date": "2026-03-02T14:03:51.934620Z",
     "data_end_date": "2026-03-02",
     "symbol": "AAPL",
     "period": "5y",
     "file": "storage/lstm_model.pt"
-  },
-  "backtest_5y_baseline": {
-    "stat": {"sharpe": 0.168, "total_return": 0.056, "max_dd": -0.258, "n_trades": 390},
-    "stat_ml": {"sharpe": 0.194, "total_return": 0.073, "max_dd": -0.258, "n_trades": 390}
   },
   "files_to_preserve": [
     "storage/lstm_model.pt",

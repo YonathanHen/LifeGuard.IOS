@@ -93,6 +93,11 @@ class BacktestEngine:
         ml_disaster_threshold: float = 0.80,
         commission_bps: float = 5.0,
         slippage_bps: float = 3.0,
+        # New strategy flags (docs/STRATEGY_RESEARCH_AND_RECOMMENDATIONS.md)
+        mean_rev_mult: float = 1.0,
+        vol_target_ann: Optional[float] = None,
+        atr_stop_mult: float = 0.0,
+        kelly_frac: float = 0.0,
     ):
         self.symbol = symbol
         self.horizon = horizon
@@ -104,6 +109,10 @@ class BacktestEngine:
         self.ml_disaster_threshold = ml_disaster_threshold
         self.commission_bps = commission_bps
         self.slippage_bps = slippage_bps
+        self.mean_rev_mult = mean_rev_mult
+        self.vol_target_ann = vol_target_ann
+        self.atr_stop_mult = atr_stop_mult
+        self.kelly_frac = kelly_frac
 
     def run(self, period: str = "3y", end_date: Optional[str] = None) -> BacktestResult:
         """Run backtest, return metrics. Use end_date for year-specific runs (e.g. 2022)."""
@@ -126,6 +135,7 @@ class BacktestEngine:
             dv_aligned = df["dollar_volume_20d"].reindex(returns.index).ffill()
         else:
             dv_aligned = None
+        vol_aligned = df["volatility"].reindex(returns.index).ffill() if "volatility" in df.columns else None
 
         # Pre-compute ML probs if use_ml
         ml_cache = {}
@@ -193,8 +203,44 @@ class BacktestEngine:
             positions.append(pos)
             regimes.append(regime_name)
 
-            pos_mult = 0.5 if regime_name == "trend" and pos == 1 else 1.0
+            # Base regime sizing: trend=0.5, mean_reverting=mean_rev_mult, else 1.0
+            if pos == 0:
+                pos_mult = 1.0
+            elif regime_name == "trend":
+                pos_mult = 0.5
+            elif regime_name == "mean_reverting" and self.mean_rev_mult != 1.0:
+                pos_mult = self.mean_rev_mult
+            else:
+                pos_mult = 1.0
+
+            # Volatility targeting: scale down when vol high
+            if self.vol_target_ann and pos == 1 and vol_aligned is not None:
+                vol_i = float(vol_aligned.iloc[i]) if i < len(vol_aligned) else 0.15
+                if vol_i > 1e-8:
+                    vol_mult = min(1.5, max(0.25, self.vol_target_ann / vol_i))
+                    pos_mult *= vol_mult
+
+            # Kelly fractional sizing (rolling hit rate) — scale 0.5..1.0 by edge
+            # Use only days with realized returns (exclude current)
+            if self.kelly_frac > 0 and pos == 1 and len(realized_returns) >= 20:
+                long_so_far = [k for k in range(len(positions)) if positions[k] == 1 and k < len(realized_returns)]
+                if len(long_so_far) >= 10:
+                    hits = sum(1 for k in long_so_far if realized_returns[k] > 0)
+                    hr = hits / len(long_so_far)
+                    kelly_f = max(0, 2 * hr - 1)  # edge for 1:1 payoff
+                    kelly_mult = max(0.25, min(1.0, 0.5 + 0.5 * kelly_f * self.kelly_frac))
+                    pos_mult *= kelly_mult
+
             ret = pos * pos_mult * returns.iloc[i + 1]
+            next_ret = returns.iloc[i + 1]
+
+            # ATR/Volatility stop: cap loss on large down moves
+            if self.atr_stop_mult > 0 and pos == 1 and next_ret < 0 and vol_aligned is not None:
+                vol_1d = float(vol_aligned.iloc[i]) / np.sqrt(252) if i < len(vol_aligned) and vol_aligned.iloc[i] > 0 else 0.02
+                stop_level = -self.atr_stop_mult * vol_1d
+                if next_ret < stop_level:
+                    ret = pos_mult * stop_level  # Capped loss (we would have been stopped)
+
             if round_trip_cost > 0 and pos == 1 and (len(positions) == 1 or positions[-2] == 0):
                 ret -= round_trip_cost
             realized_returns.append(ret)

@@ -27,6 +27,19 @@ def _bool_arg(val, default):
     return str(val).lower() in ("1", "true", "yes")
 
 
+def _get_git_commit() -> str:
+    """Return current git commit hash for reproducibility."""
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=Path(__file__).parent.parent, timeout=5
+        )
+        return out.stdout.strip()[:12] if out.returncode == 0 and out.stdout else ""
+    except Exception:
+        return ""
+
+
 def _save_run(mode: str, symbol: str, period: str, result, avg_trade: float, engine_kw: dict):
     """Save run to results/ (flight log)."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -35,6 +48,7 @@ def _save_run(mode: str, symbol: str, period: str, result, avg_trade: float, eng
     path = RESULTS_DIR / fname
     data = {
         "timestamp": datetime.now().isoformat(),
+        "git_commit": _get_git_commit(),
         "mode": mode,
         "symbol": symbol,
         "period": period,
@@ -45,6 +59,7 @@ def _save_run(mode: str, symbol: str, period: str, result, avg_trade: float, eng
         "avg_trade_pct": round(avg_trade, 4),
         "hit_rate": round(result.hit_rate, 4),
         "params": {k: v for k, v in engine_kw.items() if k != "symbol"},
+        "costs_included": True,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -79,6 +94,12 @@ def main():
     ap.add_argument("--commission", type=float, default=None, help="Commission bps")
     ap.add_argument("--slippage", type=float, default=None, help="Slippage bps")
     ap.add_argument("--end-date", type=str, default=None, help="Pin end date (YYYY-MM-DD) to reproduce a specific run. Default: today.")
+    # Strategy flags (docs/STRATEGY_RESEARCH_AND_RECOMMENDATIONS.md)
+    ap.add_argument("--mean-rev-mult", type=float, default=None, help="Mean-reverting position multiplier (e.g. 2.0 for MR x2). Default: 1.0")
+    ap.add_argument("--vol-target", type=float, default=None, help="Volatility target (annual, e.g. 0.15). Scale position when vol high. Default: off")
+    ap.add_argument("--atr-stop", type=float, default=None, help="ATR/volatility stop multiplier (e.g. 2). Cap loss on large down moves. Default: off")
+    ap.add_argument("--kelly-frac", type=float, default=None, help="Fractional Kelly sizing (0.25-0.5). Scale by rolling hit rate. Default: off")
+    ap.add_argument("--symbols", type=str, default=None, help="Comma-separated symbols (e.g. AAPL,SPY,QQQ). Run multi-symbol, aggregate results.")
     args = ap.parse_args()
 
     if args.list_modes:
@@ -107,28 +128,62 @@ def main():
         "ml_disaster_threshold": args.disaster_threshold if args.disaster_threshold is not None else cfg.get("ml_disaster_threshold", 0.8),
         "commission_bps": args.commission if args.commission is not None else cfg.get("commission_bps", 5),
         "slippage_bps": args.slippage if args.slippage is not None else cfg.get("slippage_bps", 3),
+        "mean_rev_mult": args.mean_rev_mult if args.mean_rev_mult is not None else cfg.get("mean_rev_mult", 1.0),
+        "vol_target_ann": args.vol_target if args.vol_target is not None else cfg.get("vol_target_ann"),
+        "atr_stop_mult": args.atr_stop if args.atr_stop is not None else cfg.get("atr_stop_mult", 0.0) or 0.0,
+        "kelly_frac": args.kelly_frac if args.kelly_frac is not None else cfg.get("kelly_frac", 0.0) or 0.0,
     }
 
-    print(f"Backtest: mode={args.mode} | {symbol} | {period}" + (f" end={args.end_date}" if args.end_date else ""))
-    print(f"  use_ml={engine_kw['use_ml']} ml_threshold={engine_kw['ml_threshold']}")
-    engine = BacktestEngine(**engine_kw)
-    result = engine.run(period=period, end_date=args.end_date)
+    symbols_to_run = [s.strip() for s in args.symbols.split(",")] if args.symbols else [symbol]
 
-    avg_trade = (result.total_return / result.n_trades * 100) if result.n_trades else 0
-    print("\n--- Backtest Results ---")
-    print(f"Sharpe Ratio:    {result.sharpe_ratio:.3f}")
-    print(f"Max Drawdown:    {result.max_drawdown:.1%}")
-    print(f"Total Return:    {result.total_return:.1%}")
-    print(f"Number of Trades: {result.n_trades}")
-    print(f"Avg per trade:   {avg_trade:.3f}%")
-    print(f"Hit Rate (long): {result.hit_rate:.1%}")
+    def _run_one(sym: str):
+        kw = {**engine_kw, "symbol": sym}
+        eng = BacktestEngine(**kw)
+        return eng.run(period=period, end_date=args.end_date), kw
 
-    # Flight log: save every run
-    _save_run(args.mode, symbol, period, result, avg_trade, engine_kw)
+    # Build strategy label for display/save
+    flags = []
+    if engine_kw.get("mean_rev_mult", 1.0) != 1.0:
+        flags.append(f"MRx{engine_kw['mean_rev_mult']}")
+    if engine_kw.get("vol_target_ann"):
+        flags.append(f"volT{engine_kw['vol_target_ann']}")
+    if engine_kw.get("atr_stop_mult", 0) > 0:
+        flags.append(f"ATR{engine_kw['atr_stop_mult']}")
+    if engine_kw.get("kelly_frac", 0) > 0:
+        flags.append(f"Kelly{engine_kw['kelly_frac']}")
+    flags_str = " ".join(flags) if flags else ""
 
-    # Regression check: stat_only baseline
-    if args.mode == "stat_only" and period >= "2y" and result.total_return < 0.12:
-        print("\n⚠️ Regression? stat_only return < 12%. Expected ~20-24%. Check engine changes.")
+    results_by_symbol = []
+    for sym in symbols_to_run:
+        print(f"\n--- {sym} ---" if len(symbols_to_run) > 1 else "")
+        print(f"Backtest: mode={args.mode} | {sym} | {period}" + (f" end={args.end_date}" if args.end_date else ""))
+        print(f"  use_ml={engine_kw['use_ml']} ml_threshold={engine_kw['ml_threshold']}" + (f" | {flags_str}" if flags_str else ""))
+        result, kw = _run_one(sym)
+        avg_trade = (result.total_return / result.n_trades * 100) if result.n_trades else 0
+        print(f"  Sharpe={result.sharpe_ratio:.3f} Return={result.total_return:.1%} DD={result.max_drawdown:.1%} Trades={result.n_trades}")
+        _save_run(args.mode, sym, period, result, avg_trade, kw)
+        results_by_symbol.append((sym, result, avg_trade, kw))
+
+    # Summary
+    result = results_by_symbol[0][1] if results_by_symbol else None
+    if result:
+        avg_trade = (result.total_return / result.n_trades * 100) if result.n_trades else 0
+        print("\n--- Backtest Results ---")
+        if len(results_by_symbol) == 1:
+            print(f"Sharpe Ratio:    {result.sharpe_ratio:.3f}")
+            print(f"Max Drawdown:    {result.max_drawdown:.1%}")
+            print(f"Total Return:    {result.total_return:.1%}")
+            print(f"Number of Trades: {result.n_trades}")
+            print(f"Avg per trade:   {avg_trade:.3f}%")
+            print(f"Hit Rate (long): {result.hit_rate:.1%}")
+        else:
+            total_ret = sum((1 + r[1].total_return) for r in results_by_symbol) / len(results_by_symbol) - 1
+            avg_sharpe = sum(r[1].sharpe_ratio for r in results_by_symbol) / len(results_by_symbol)
+            print(f"Multi-symbol avg: Return={total_ret:.1%} Sharpe={avg_sharpe:.3f}")
+
+        # Regression check: stat_only baseline
+        if args.mode == "stat_only" and period >= "2y" and result.total_return < 0.12:
+            print("\n⚠️ Regression? stat_only return < 12%. Expected ~20-24%. Check engine changes.")
 
 
 if __name__ == "__main__":

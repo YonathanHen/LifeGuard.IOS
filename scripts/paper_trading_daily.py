@@ -62,10 +62,11 @@ def _factors_to_dict(factors) -> dict:
     return {name: passed for name, passed in factors}
 
 
-def run_daily_decision(symbol: str = "AAPL", end_date: str | None = None) -> dict:
+def run_daily_decision(symbol: str = "AAPL", end_date: str | None = None, stat_only: bool = False) -> dict:
     """
     Run full prediction logic for one day (point-in-time).
     Returns decision record for paper_decisions.json.
+    stat_only=True: skip LSTM (match best_combo / Stat Core backtest).
     """
     horizon = "daily"
     disaster_threshold = _disaster_threshold()
@@ -115,30 +116,40 @@ def run_daily_decision(symbol: str = "AAPL", end_date: str | None = None) -> dic
     ml_blocked = False
     # We only trade Long when direction=up; direction=down/flat → no trade
     has_edge_final = has_edge_stat and arima_out["direction"] == "up"
-    lstm = LSTMPredictor()
-    if lstm.load():
-        ml_probs = lstm.predict_proba(df)
-        if ml_probs is not None and has_edge_stat and arima_out["direction"] == "up":
-            should_trade, _ = ensemble_decision_negative_filter(
-                has_edge_stat, arima_out["direction"], ml_probs,
-                disaster_threshold=disaster_threshold,
-            )
-            if not should_trade:
-                ml_blocked = True
-                has_edge_final = False
+    if not stat_only:
+        lstm = LSTMPredictor()
+        if lstm.load():
+            ml_probs = lstm.predict_proba(df)
+            if ml_probs is not None and has_edge_stat and arima_out["direction"] == "up":
+                should_trade, _ = ensemble_decision_negative_filter(
+                    has_edge_stat, arima_out["direction"], ml_probs,
+                    disaster_threshold=disaster_threshold,
+                )
+                if not should_trade:
+                    ml_blocked = True
+                    has_edge_final = False
+
+    # best_combo position sizing hint: trend=50%, mean_reverting=200%, else 100%
+    position_pct = 100
+    if has_edge_final and regime_name == "trend":
+        position_pct = 50
+    elif has_edge_final and regime_name == "mean_reverting":
+        position_pct = 200  # MR x2
 
     record = {
         "date": prediction_date.strftime("%Y-%m-%d") if prediction_date else None,
         "symbol": symbol.upper(),
+        "stat_only": stat_only,
         "has_edge_stat": has_edge_stat,
         "has_edge_final": has_edge_final,
         "ml_blocked": ml_blocked,
         "regime": regime_name,
+        "position_pct": position_pct,
         "direction": arima_out["direction"],
         "stat_confidence": conf,
         "confidence_factors": _factors_to_dict(factors),
         "ml_probs": {k: round(v, 4) for k, v in (ml_probs or {}).items()},
-        "model_version": _model_version(),
+        "model_version": "stat_only" if stat_only else _model_version(),
     }
     return record
 
@@ -152,6 +163,7 @@ def main():
     ap.add_argument("--date", default=None, help="End date YYYY-MM-DD (default: yesterday)")
     ap.add_argument("--batch-start", default=None, help="Batch: start date YYYY-MM-DD")
     ap.add_argument("--batch-end", default=None, help="Batch: end date YYYY-MM-DD")
+    ap.add_argument("--no-ml", action="store_true", help="Stat Only — skip LSTM (match best_combo backtest)")
     ap.add_argument("--dry-run", action="store_true", help="Print only, do not save")
     args = ap.parse_args()
 
@@ -182,7 +194,7 @@ def main():
                 skipped += 1
                 continue
             try:
-                record = run_daily_decision(symbol=args.symbol, end_date=end_date)
+                record = run_daily_decision(symbol=args.symbol, end_date=end_date, stat_only=args.no_ml)
             except Exception as e:
                 print(f"  ERROR {end_date}: {e}")
                 errors += 1
@@ -208,10 +220,10 @@ def main():
         end_date = yesterday
 
     print("SignalFlow — Paper Trading Daily Logger")
-    print(f"  Symbol: {args.symbol}  End date: {end_date}")
+    print(f"  Symbol: {args.symbol}  End date: {end_date}" + ("  [Stat Only]" if args.no_ml else ""))
 
     try:
-        record = run_daily_decision(symbol=args.symbol, end_date=end_date)
+        record = run_daily_decision(symbol=args.symbol, end_date=end_date, stat_only=args.no_ml)
     except Exception as e:
         print(f"\n*** ERROR: {e}")
         print("יום חסר ב-Logger = יום אבוד ב-Paper Trading. Yahoo/FRED נכשל?")

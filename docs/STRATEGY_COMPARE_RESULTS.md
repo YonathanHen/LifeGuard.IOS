@@ -2,7 +2,7 @@
 
 *נוצר אוטומטית על ידי `scripts/run_strategy_compare.py`*
 
-**שחזור תוצאות:** `docs/REPRODUCIBILITY.md` | כל התוצאות כוללות עמלות (5+3 bps).
+**שחזור תוצאות:** `docs/REPRODUCIBILITY.md` | **Path to Production:** `docs/PATH_TO_PRODUCTION.md` | עמלות (5+3 bps).
 
 ---
 
@@ -92,3 +92,31 @@ Symbol: AAPL
 | MR x2 + ATR Stop | 1.744 | 77.2% | -11.1% | 154 | horizon=daily, refit_every=5, commission |
 | ATR Stop + Vol Target | 1.940 | 30.7% | -5.2% | 154 | horizon=daily, refit_every=5, commission |
 | MR x2 + ATR Stop + Vol Target | 1.986 | 62.9% | -7.6% | 154 | horizon=daily, refit_every=5, commission |
+
+## Run 2026-03-17 12:03
+Period: 5y
+Symbol: AAPL
+
+| Strategy | Sharpe | Return | Max DD | Trades | Params |
+|----------|--------|--------|--------|--------|--------|
+| Stat Only (baseline) | 0.819 | 38.7% | -12.6% | 360 | horizon=daily, refit_every=5, commission |
+| MR x2 (mean_rev_mult=2.0) | 0.909 | 86.3% | -23.5% | 355 | horizon=daily, refit_every=5, commission |
+
+## Run 2026-03-17 12:08
+Period: 5y
+Symbol: AAPL
+
+| Strategy | Sharpe | Return | Max DD | Trades | Params |
+|----------|--------|--------|--------|--------|--------|
+| MR x2 + ATR Stop | 1.269 | 143.1% | -20.0% | 360 | horizon=daily, refit_every=5, commission |
+| MR x2 + ATR Stop + Vol Target | 0.991 | 65.2% | -17.3% | 360 | horizon=daily, refit_every=5, commission |
+
+## Run 2026-03-17 12:13
+Period: 3y | End: 2026-03-02
+Symbol: AAPL (multi: AAPL,SPY,QQQ)
+
+| Strategy | Sharpe | Return | Max DD | Trades | Params |
+|----------|--------|--------|--------|--------|--------|
+| Stat Only (baseline) | 1.617 | 35.2% | -8.5% | 154 | horizon=daily, refit_every=5, commission |
+| MR x2 + ATR Stop + Vol Target | 1.934 | 56.8% | -7.6% | 154 | horizon=daily, refit_every=5, commission |
+| Multi-symbol ['AAPL', 'SPY', 'QQQ'] | 1.260 | 24.8% | -9.4% | 662 | commission_bps=5, slippage_bps=3, refit_ |

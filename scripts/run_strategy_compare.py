@@ -53,6 +53,22 @@ STRATEGIES = [
         "label": "MR x2 + Vol Target",
         "kwargs": {"use_ml": False, "mean_rev_mult": 2.0, "vol_target_ann": 0.15},
     },
+    # Combination strategies
+    {
+        "id": "mr_x2_atr",
+        "label": "MR x2 + ATR Stop",
+        "kwargs": {"use_ml": False, "mean_rev_mult": 2.0, "atr_stop_mult": 2.0},
+    },
+    {
+        "id": "atr_vol",
+        "label": "ATR Stop + Vol Target",
+        "kwargs": {"use_ml": False, "atr_stop_mult": 2.0, "vol_target_ann": 0.15},
+    },
+    {
+        "id": "mr_x2_atr_vol",
+        "label": "MR x2 + ATR Stop + Vol Target",
+        "kwargs": {"use_ml": False, "mean_rev_mult": 2.0, "atr_stop_mult": 2.0, "vol_target_ann": 0.15},
+    },
 ]
 
 

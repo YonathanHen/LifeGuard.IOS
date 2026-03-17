@@ -223,16 +223,24 @@
 
 ## תוצאות אימות (2026-03-17, 3y end 2026-03-02)
 
+### בודדות
 | אסטרטגיה | Sharpe | Return | Max DD | Trades |
 |----------|--------|--------|--------|--------|
-| baseline | 1.62 | 35.2% | -8.5% | 154 |
-| **MR x2** | 1.51 | **64.0%** | -13.8% | 154 |
-| vol_target | 1.71 | 26.5% | -6.3% | 154 |
-| **ATR Stop x2** | **1.78** | 38.2% | -7.0% | 154 |
-| kelly | 1.38 | 17.2% | -5.0% | 154 |
-| **MR x2 + Vol** | 1.76 | 52.3% | -9.6% | 154 |
+| baseline | 1.64 | 36.5% | -8.5% | 154 |
+| MR x2 | 1.55 | 68.4% | -13.8% | 154 |
+| vol_target | 1.66 | 27.2% | -6.3% | 154 |
+| ATR Stop x2 | 1.83 | 40.1% | -7.0% | 154 |
+| kelly | 1.40 | 17.8% | -5.0% | 154 |
+| MR x2 + Vol | 1.68 | 54.6% | -9.6% | 154 |
 
-**מסקנות:** MR x2 מגדיל return ל־64%. ATR Stop ממשיך Sharpe (1.78). MR x2 + Vol איזון טוב (52.3%, DD -9.6%).
+### שילובים (Combinations)
+| שילוב | Sharpe | Return | Max DD |
+|-------|--------|--------|--------|
+| **MR x2 + ATR Stop + Vol Target** | **1.986** | 62.9% | -7.6% |
+| MR x2 + ATR Stop | 1.744 | **77.2%** | -11.1% |
+| ATR Stop + Vol Target | 1.940 | 30.7% | **-5.2%** |
+
+**מסקנות:** השילוב השלישי (MR x2 + ATR + Vol) הוא הטוב ביותר — Sharpe 1.99, Return 63%, DD סביר. MR x2 + ATR מניב Return הכי גבוה (77%). `docs/STRATEGY_COMPARE_RESULTS.md` מעודכן.
 
 ---
 
@@ -247,6 +255,15 @@
 | `--kelly-frac 0.5` | engine.py | נמוך | שיפור risk-adjusted |
 | `--symbols AAPL,SPY` | run_backtest.py (loop) | נמוך | robustness |
 | `--atr-stop 2` | engine.py | בינוני | הגנה על רווחים |
+
+### שילוב מומלץ (אומת 2026-03-17)
+
+```bash
+python scripts/run_backtest.py --mode stat_only --period 3y \
+  --mean-rev-mult 2.0 --atr-stop 2 --vol-target 0.15
+```
+
+תוצאות: Sharpe 1.99, Return 62.9%, Max DD -7.6%.
 
 ### סדר עדיפות
 

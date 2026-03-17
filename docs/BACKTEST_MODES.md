@@ -21,6 +21,7 @@ python scripts/run_backtest.py --mode <שם_המצב>
 | ml_threshold_085 | true | 0.85 | false | 5 | 3 | ~0 trades (לא נבדק) |
 | ml_threshold_090 | true | 0.9 | false | 5 | 3 | 5 trades, -3.2% |
 | ml_negative_filter | true | - | true (0.8) | 5 | 3 | חוסם רק P_down>0.8 |
+| **best_combo** | false | - | - | 5 | 3 | MR x2 + ATR + Vol: Sharpe 1.99, Return 63%, DD -7.6% |
 
 ---
 
@@ -58,6 +59,9 @@ python scripts/run_backtest.py --mode ml_threshold_050
 
 # Override פרמטרים
 python scripts/run_backtest.py --mode stat_only --symbol MSFT --period 2y
+
+# השילוב המומלץ (MR x2 + ATR Stop + Vol Target)
+python scripts/run_backtest.py --mode best_combo --period 3y --end-date 2026-03-02
 ```
 
 ---

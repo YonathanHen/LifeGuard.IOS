@@ -82,6 +82,18 @@
       "symbol": "AAPL",
       "period": "3y",
       "_note": "Blocks only when P_down > 0.8, allows Stat trades otherwise"
+    },
+    "best_combo": {
+      "use_ml": false,
+      "mean_rev_mult": 2.0,
+      "atr_stop_mult": 2.0,
+      "vol_target_ann": 0.15,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "symbol": "AAPL",
+      "period": "3y",
+      "_observed_3y": "MR x2 + ATR + Vol: Sharpe 1.99, Return 63%, DD -7.6% (2026-03-17)"
     }
   },
   "default_mode": "stat_only"

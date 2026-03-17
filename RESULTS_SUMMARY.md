@@ -1,6 +1,8 @@
 # SignalFlow — סיכום כל התוצאות
 
-*עדכון אחרון: 2026-03-02*
+*עדכון אחרון: 2026-03*
+
+**ניתוח מקיף + Revert:** `storage/SUCCESS_HISTORY_AND_REVERT_ANALYSIS.md`
 
 ---
 
@@ -70,6 +72,10 @@
 |------|------|
 | `storage/backtest_runs.json` | כל הרצות Backtest (שמירה אוטומטית) |
 | `storage/validation_runs.json` | כל הרצות Validation |
+| `storage/SUCCESS_HISTORY_AND_REVERT_ANALYSIS.md` | היסטוריית הצלחות + ניתוח Revert |
+| `storage/PERFORMANCE_REPORT.md` | סימולציה 5y (27.8%, Regime Sizing) |
+| `storage/LEVERAGE_ANALYSIS_AND_RECOMMENDATIONS.md` | MR x2 — 52.1% |
+| `results/*.json` | תוצאות backtest לפי תאריך |
 | `ALGORITHM_SPEC.md` | מפרט אלגוריתם + פרמטרים + תוצאות |
 | `RESULTS_SUMMARY.md` | מסמך זה — סיכום מרוכז |
 

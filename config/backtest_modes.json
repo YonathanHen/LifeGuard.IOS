@@ -1,0 +1,88 @@
+{
+  "_description": "Named backtest modes. Use --mode <name> to run. Default: stat_only (the proven profitable baseline).",
+  "_min_gain_filter_actual": "P_up>=0.5: 115 trades 22.1% 0.192% Safe. 0.6+: 0 trades.",
+  "modes": {
+    "stat_only": {
+      "use_ml": false,
+      "ml_threshold": 0.6,
+      "ml_negative_filter": false,
+      "ml_disaster_threshold": 0.8,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "symbol": "AAPL",
+      "period": "3y",
+      "_observed_3y": "Return ~21-24%, Sharpe ~1.0, MaxDD -10.7%, ~185 trades, avg/trade 0.12%"
+    },
+    "stat_only_no_costs": {
+      "use_ml": false,
+      "commission_bps": 0,
+      "slippage_bps": 0,
+      "refit_every": 5,
+      "symbol": "AAPL",
+      "period": "3y",
+      "_observed": "Gross return baseline (before friction)"
+    },
+    "ml_threshold_050": {
+      "use_ml": true,
+      "ml_threshold": 0.5,
+      "ml_negative_filter": false,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "symbol": "AAPL",
+      "period": "3y",
+      "_observed_2y": "115 trades, 22.1%, avg 0.192% (Safe vs cost)"
+    },
+    "ml_threshold_060": {
+      "use_ml": true,
+      "ml_threshold": 0.6,
+      "ml_negative_filter": false,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "symbol": "AAPL",
+      "period": "3y",
+      "_observed_2y": "0 trades (LSTM blocks all)"
+    },
+    "ml_threshold_070": {
+      "use_ml": true,
+      "ml_threshold": 0.7,
+      "ml_negative_filter": false,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "_observed_2y": "0 trades"
+    },
+    "ml_threshold_085": {
+      "use_ml": true,
+      "ml_threshold": 0.85,
+      "ml_negative_filter": false,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "_observed": "Expected ~0 trades (untested due to rate limit)"
+    },
+    "ml_threshold_090": {
+      "use_ml": true,
+      "ml_threshold": 0.9,
+      "ml_negative_filter": false,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "_observed_2y": "5 trades, -3.2%, avg -0.65%"
+    },
+    "ml_negative_filter": {
+      "use_ml": true,
+      "ml_negative_filter": true,
+      "ml_disaster_threshold": 0.8,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "symbol": "AAPL",
+      "period": "3y",
+      "_note": "Blocks only when P_down > 0.8, allows Stat trades otherwise"
+    }
+  },
+  "default_mode": "stat_only"
+}

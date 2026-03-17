@@ -105,9 +105,9 @@ class BacktestEngine:
         self.commission_bps = commission_bps
         self.slippage_bps = slippage_bps
 
-    def run(self, period: str = "3y") -> BacktestResult:
-        """Run backtest, return metrics."""
-        pipeline = DataPipeline(self.symbol, self.horizon, period=period)
+    def run(self, period: str = "3y", end_date: Optional[str] = None) -> BacktestResult:
+        """Run backtest, return metrics. Use end_date for year-specific runs (e.g. 2022)."""
+        pipeline = DataPipeline(self.symbol, self.horizon, period=period, end_date=end_date)
         df = pipeline.run()
         returns = df["returns"].dropna()
 

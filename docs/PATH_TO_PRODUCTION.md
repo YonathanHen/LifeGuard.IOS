@@ -26,7 +26,7 @@
 | 1 | **Paper Trading 6–9 חודשים** | הרצה יומית, רישום החלטות | הפעיל ותריץ |
 | 2 | **השוואת Paper vs Backtest** | כל חודש: `paper_vs_backtest_compare.py` | כלי מוכן |
 | 3 | **Multi-symbol validation** | הרצת best_combo על SPY, QQQ בנוסף ל-AAPL | 5y ריצה — תיעוד |
-| 4 | **Circuit Breaker** | הגדרת עצירה אוטומטית ב-DD > X% | לא מיושם |
+| 4 | **Circuit Breaker** | עצירה ב-DD ≥ 15% + Drawdown Throttle | ✅ מיושם (`--circuit-breaker 0.15 --drawdown-throttle`) |
 | 5 | **תנאי Go/No-Go** | לפי GO_NO_GO_FRAMEWORK.md | מסמך קיים |
 
 ---
@@ -72,6 +72,7 @@ python scripts/paper_vs_backtest_compare.py --symbol AAPL
 | `docs/GO_NO_GO_FRAMEWORK.md` | קריטריוני Go/No-Go |
 | `docs/REPRODUCIBILITY.md` | פרוטוקול שחזור |
 | `docs/PERIOD_5Y_AND_MULTI_SYMBOL_RESULTS.md` | תוצאות 5y ו-multi-symbol |
+| `docs/IMPROVEMENTS_IMPLEMENTATION.md` | Circuit Breaker, DD-Throttle, Degradation, Walk-Forward, Event Filter |
 
 ---
 

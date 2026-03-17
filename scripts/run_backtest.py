@@ -99,6 +99,8 @@ def main():
     ap.add_argument("--vol-target", type=float, default=None, help="Volatility target (annual, e.g. 0.15). Scale position when vol high. Default: off")
     ap.add_argument("--atr-stop", type=float, default=None, help="ATR/volatility stop multiplier (e.g. 2). Cap loss on large down moves. Default: off")
     ap.add_argument("--kelly-frac", type=float, default=None, help="Fractional Kelly sizing (0.25-0.5). Scale by rolling hit rate. Default: off")
+    ap.add_argument("--circuit-breaker", type=float, default=None, metavar="PCT", help="Block positions when drawdown >= PCT (e.g. 0.15). Default: off")
+    ap.add_argument("--drawdown-throttle", action="store_true", help="Scale position when in drawdown (10%%→0.75x, 15%%→0.5x)")
     ap.add_argument("--symbols", type=str, default=None, help="Comma-separated symbols (e.g. AAPL,SPY,QQQ). Run multi-symbol, aggregate results.")
     args = ap.parse_args()
 
@@ -132,6 +134,8 @@ def main():
         "vol_target_ann": args.vol_target if args.vol_target is not None else cfg.get("vol_target_ann"),
         "atr_stop_mult": args.atr_stop if args.atr_stop is not None else cfg.get("atr_stop_mult", 0.0) or 0.0,
         "kelly_frac": args.kelly_frac if args.kelly_frac is not None else cfg.get("kelly_frac", 0.0) or 0.0,
+        "circuit_breaker_pct": args.circuit_breaker if args.circuit_breaker is not None else cfg.get("circuit_breaker_pct"),
+        "drawdown_throttle": args.drawdown_throttle or cfg.get("drawdown_throttle", False),
     }
 
     symbols_to_run = [s.strip() for s in args.symbols.split(",")] if args.symbols else [symbol]
@@ -151,6 +155,10 @@ def main():
         flags.append(f"ATR{engine_kw['atr_stop_mult']}")
     if engine_kw.get("kelly_frac", 0) > 0:
         flags.append(f"Kelly{engine_kw['kelly_frac']}")
+    if engine_kw.get("circuit_breaker_pct") is not None:
+        flags.append(f"CB>={engine_kw['circuit_breaker_pct']:.0%}")
+    if engine_kw.get("drawdown_throttle"):
+        flags.append("DD-Throttle")
     flags_str = " ".join(flags) if flags else ""
 
     results_by_symbol = []

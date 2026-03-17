@@ -31,6 +31,12 @@ from models.rules.engine import (
 )
 from models.rules.cross_asset import check_cross_asset_alignment
 from models.rules.cooldown import check_cooldown
+from models.rules.circuit_breaker import (
+    check_circuit_breaker,
+    get_drawdown_throttle,
+    get_paper_equity_drawdown,
+)
+from models.rules.event_filter import is_event_day
 
 
 def _disaster_threshold() -> float:
@@ -62,11 +68,25 @@ def _factors_to_dict(factors) -> dict:
     return {name: passed for name, passed in factors}
 
 
-def run_daily_decision(symbol: str = "AAPL", end_date: str | None = None, stat_only: bool = False) -> dict:
+def run_daily_decision(
+    symbol: str = "AAPL",
+    end_date: str | None = None,
+    stat_only: bool = False,
+    *,
+    circuit_breaker_pct: float | None = None,
+    drawdown_throttle: bool = False,
+    use_event_filter: bool = True,
+    prior_decisions: list | None = None,
+) -> dict:
     """
     Run full prediction logic for one day (point-in-time).
     Returns decision record for paper_decisions.json.
     stat_only=True: skip LSTM (match best_combo / Stat Core backtest).
+
+    Circuit Breaker: block new positions when drawdown >= circuit_breaker_pct (e.g. 0.15).
+    Drawdown Throttle: scale position when dd>=10% (0.75x) or dd>=15% (0.5x).
+    Event Filter: skip trade on event days (earnings, FOMC, etc.).
+    prior_decisions: for batch mode — accumulated decisions before today.
     """
     horizon = "daily"
     disaster_threshold = _disaster_threshold()
@@ -136,6 +156,44 @@ def run_daily_decision(symbol: str = "AAPL", end_date: str | None = None, stat_o
     elif has_edge_final and regime_name == "mean_reverting":
         position_pct = 200  # MR x2
 
+    # Circuit Breaker & Drawdown Throttle
+    circuit_breaker_tripped = False
+    current_drawdown_pct = 0.0
+    drawdown_throttle_mult = 1.0
+    if (circuit_breaker_pct is not None or drawdown_throttle) and prediction_date is not None:
+        pred_str = prediction_date.strftime("%Y-%m-%d")
+        if prior_decisions is not None:
+            prior = [d for d in prior_decisions if d.get("date") and d.get("date") < pred_str]
+        else:
+            path = Path(__file__).parent.parent / "storage" / "paper_decisions.json"
+            all_d = []
+            if path.exists():
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        all_d = json.load(f)
+                except json.JSONDecodeError:
+                    pass
+            prior = [d for d in all_d if d.get("date") and d.get("date") < pred_str]
+        _, current_drawdown_pct, _ = get_paper_equity_drawdown(
+            prior, returns, symbol.upper()
+        )
+        if circuit_breaker_pct is not None and current_drawdown_pct >= circuit_breaker_pct:
+            circuit_breaker_tripped = True
+            has_edge_final = False
+            position_pct = 0
+        elif drawdown_throttle and has_edge_final:
+            drawdown_throttle_mult = get_drawdown_throttle(current_drawdown_pct)
+            position_pct = max(0, int(position_pct * drawdown_throttle_mult))
+
+    # Event Calendar filter
+    event_day = False
+    if use_event_filter and prediction_date is not None and has_edge_final:
+        pred_str = prediction_date.strftime("%Y-%m-%d")
+        if is_event_day(pred_str, symbol.upper()):
+            event_day = True
+            has_edge_final = False
+            position_pct = 0
+
     record = {
         "date": prediction_date.strftime("%Y-%m-%d") if prediction_date else None,
         "symbol": symbol.upper(),
@@ -150,6 +208,10 @@ def run_daily_decision(symbol: str = "AAPL", end_date: str | None = None, stat_o
         "confidence_factors": _factors_to_dict(factors),
         "ml_probs": {k: round(v, 4) for k, v in (ml_probs or {}).items()},
         "model_version": "stat_only" if stat_only else _model_version(),
+        "circuit_breaker_tripped": circuit_breaker_tripped,
+        "current_drawdown_pct": round(current_drawdown_pct, 4),
+        "drawdown_throttle_mult": drawdown_throttle_mult,
+        "event_day": event_day,
     }
     return record
 
@@ -164,6 +226,9 @@ def main():
     ap.add_argument("--batch-start", default=None, help="Batch: start date YYYY-MM-DD")
     ap.add_argument("--batch-end", default=None, help="Batch: end date YYYY-MM-DD")
     ap.add_argument("--no-ml", action="store_true", help="Stat Only — skip LSTM (match best_combo backtest)")
+    ap.add_argument("--circuit-breaker", type=float, default=None, metavar="PCT", help="Block when drawdown >= PCT (e.g. 0.15). Default: off")
+    ap.add_argument("--drawdown-throttle", action="store_true", help="Scale position when in drawdown (10%%→0.75x, 15%%→0.5x)")
+    ap.add_argument("--no-event-filter", action="store_true", help="Disable event calendar filter (earnings, FOMC, etc.)")
     ap.add_argument("--dry-run", action="store_true", help="Print only, do not save")
     args = ap.parse_args()
 
@@ -194,7 +259,15 @@ def main():
                 skipped += 1
                 continue
             try:
-                record = run_daily_decision(symbol=args.symbol, end_date=end_date, stat_only=args.no_ml)
+                record = run_daily_decision(
+                    symbol=args.symbol,
+                    end_date=end_date,
+                    stat_only=args.no_ml,
+                    circuit_breaker_pct=args.circuit_breaker,
+                    drawdown_throttle=args.drawdown_throttle,
+                    use_event_filter=not args.no_event_filter,
+                    prior_decisions=decisions,
+                )
             except Exception as e:
                 print(f"  ERROR {end_date}: {e}")
                 errors += 1
@@ -219,11 +292,25 @@ def main():
         yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
         end_date = yesterday
 
+    flags = ["Stat Only"] if args.no_ml else []
+    if args.circuit_breaker is not None:
+        flags.append(f"CircuitBreaker>={args.circuit_breaker:.0%}")
+    if args.drawdown_throttle:
+        flags.append("DD-Throttle")
+    if not args.no_event_filter:
+        flags.append("EventFilter")
     print("SignalFlow — Paper Trading Daily Logger")
-    print(f"  Symbol: {args.symbol}  End date: {end_date}" + ("  [Stat Only]" if args.no_ml else ""))
+    print(f"  Symbol: {args.symbol}  End date: {end_date}" + ("  [" + ", ".join(flags) + "]" if flags else ""))
 
     try:
-        record = run_daily_decision(symbol=args.symbol, end_date=end_date, stat_only=args.no_ml)
+        record = run_daily_decision(
+            symbol=args.symbol,
+            end_date=end_date,
+            stat_only=args.no_ml,
+            circuit_breaker_pct=args.circuit_breaker,
+            drawdown_throttle=args.drawdown_throttle,
+            use_event_filter=not args.no_event_filter,
+        )
     except Exception as e:
         print(f"\n*** ERROR: {e}")
         print("יום חסר ב-Logger = יום אבוד ב-Paper Trading. Yahoo/FRED נכשל?")

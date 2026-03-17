@@ -66,6 +66,16 @@ python scripts/run_backtest.py --mode best_combo --period 3y --end-date 2026-03-
 
 ---
 
+## best_combo_cb — Circuit Breaker + Drawdown Throttle
+
+| Mode | תיאור | דגלים |
+|------|--------|--------|
+| **best_combo_cb** | best_combo + Circuit Breaker 15% + DD Throttle | `--mode best_combo_cb` |
+
+כש־drawdown מעל 15% — חוסם כניסות. מעל 10% — מקטין פוזיציה.
+
+---
+
 ## רשימת מצבים
 
 ```bash

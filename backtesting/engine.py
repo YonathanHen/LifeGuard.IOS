@@ -21,6 +21,15 @@ from models.rules.engine import has_statistical_edge, liquidity_gate
 from models.rules.cross_asset import check_cross_asset_alignment_from_series
 
 
+def _drawdown_throttle_mult(current_dd: float) -> float:
+    """Position multiplier by drawdown: dd>=15%→0.5, dd>=10%→0.75, else 1.0."""
+    if current_dd >= 0.15:
+        return 0.5
+    if current_dd >= 0.10:
+        return 0.75
+    return 1.0
+
+
 @dataclass
 class BacktestResult:
     """Backtest output — strategy metrics."""
@@ -98,6 +107,8 @@ class BacktestEngine:
         vol_target_ann: Optional[float] = None,
         atr_stop_mult: float = 0.0,
         kelly_frac: float = 0.0,
+        circuit_breaker_pct: Optional[float] = None,
+        drawdown_throttle: bool = False,
     ):
         self.symbol = symbol
         self.horizon = horizon
@@ -113,6 +124,8 @@ class BacktestEngine:
         self.vol_target_ann = vol_target_ann
         self.atr_stop_mult = atr_stop_mult
         self.kelly_frac = kelly_frac
+        self.circuit_breaker_pct = circuit_breaker_pct
+        self.drawdown_throttle = drawdown_throttle
 
     def run(self, period: str = "3y", end_date: Optional[str] = None) -> BacktestResult:
         """Run backtest, return metrics. Use end_date for year-specific runs (e.g. 2022)."""
@@ -219,6 +232,16 @@ class BacktestEngine:
                 if vol_i > 1e-8:
                     vol_mult = min(1.5, max(0.25, self.vol_target_ann / vol_i))
                     pos_mult *= vol_mult
+
+            # Circuit Breaker & Drawdown Throttle (from realized returns so far)
+            if (self.circuit_breaker_pct is not None or self.drawdown_throttle) and len(realized_returns) >= 10:
+                cum = float((1 + pd.Series(realized_returns)).prod())
+                peak = float((1 + pd.Series(realized_returns)).cumprod().max())
+                current_dd = (peak - cum) / peak if peak > 0 else 0.0
+                if self.circuit_breaker_pct is not None and current_dd >= self.circuit_breaker_pct:
+                    pos = 0
+                elif self.drawdown_throttle and pos == 1:
+                    pos_mult *= _drawdown_throttle_mult(current_dd)
 
             # Kelly fractional sizing (rolling hit rate) — scale 0.5..1.0 by edge
             # Use only days with realized returns (exclude current)

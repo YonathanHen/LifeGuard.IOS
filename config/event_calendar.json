@@ -1,0 +1,12 @@
+{
+  "_description": "Event days: skip or reduce position. Add dates manually or via script. Format: YYYY-MM-DD.",
+  "_usage": "paper_trading_daily --no-event-filter to disable",
+  "global": [
+  ],
+  "AAPL": [
+  ],
+  "SPY": [
+  ],
+  "QQQ": [
+  ]
+}

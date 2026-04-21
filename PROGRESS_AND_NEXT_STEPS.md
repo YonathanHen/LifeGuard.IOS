@@ -201,6 +201,8 @@
 | **RESULTS_SUMMARY.md** | סיכום מרוכז של כל התוצאות |
 | **HEDGE_FUNDS_ANALYSIS_AND_ROADMAP.md** | ניתוח קרנות + תוכנית שיפור |
 | **GO_NO_GO_FRAMEWORK.md** | מתי עוצרים פיתוח, מתי עוברים למסחר |
+| **docs/RESEARCH_DECISIONS_LOG.md** | יומן מסקנות מחקר (A/B, שחזור) |
+| **docs/RECOMMENDED_ENHANCEMENTS_AB.md** | פרוטוקול שיפורי engine + הפניה ליומן |
 | **storage/backtest_runs.json** | היסטוריית הרצות (שמירה אוטומטית) |
 | **TRADING_READINESS_PLAN.md** | תוכנית מוכנות למסחר |
 | **ROADMAP_V2.md** | תכנון כללי |

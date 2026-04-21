@@ -1,10 +1,39 @@
 # SignalFlow — Symbols & Cross-Asset
-# Phase 1: נכסים לדוגמה
+# primary: נכסים ל-single-symbol (ברירת מחדל AAPL)
+# universe: רשימה מורחבת ל-multi-stock (25 נכסים נזילים, S&P 500)
 
 primary:
   - AAPL
   - MSFT
   - GOOGL
+  - SPY
+
+universe:
+  - AAPL
+  - MSFT
+  - GOOGL
+  - AMZN
+  - NVDA
+  - META
+  - JPM
+  - V
+  - JNJ
+  - PG
+  - UNH
+  - HD
+  - DIS
+  - BAC
+  - XOM
+  - NFLX
+  - ADBE
+  - CRM
+  - CSCO
+  - KO
+  - PEP
+  - WMT
+  - INTC
+  - AMD
+  - QQQ
   - SPY
 
 cross_asset:
@@ -13,3 +42,15 @@ cross_asset:
 
 liquidity_gate:
   min_dollar_volume_20d: 2_000_000  # USD
+
+# Sector ETFs for Sector Rotation strategy (9 SPDRs)
+sector_etfs:
+  - XLK   # Technology
+  - XLV   # Healthcare
+  - XLF   # Financials
+  - XLE   # Energy
+  - XLI   # Industrials
+  - XLY   # Consumer Discretionary
+  - XLP   # Consumer Staples
+  - XLU   # Utilities
+  - XLB   # Materials

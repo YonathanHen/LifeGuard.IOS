@@ -108,6 +108,21 @@
       "symbol": "AAPL",
       "period": "3y",
       "_note": "best_combo + Circuit Breaker 15% + Drawdown Throttle"
+    },
+    "best_combo_extended": {
+      "use_ml": false,
+      "mean_rev_mult": 2.0,
+      "atr_stop_mult": 2.0,
+      "vol_target_ann": 0.15,
+      "dual_momentum": true,
+      "short_term_reversal": true,
+      "low_vol_tilt": true,
+      "commission_bps": 5,
+      "slippage_bps": 3,
+      "refit_every": 5,
+      "symbol": "AAPL",
+      "period": "3y",
+      "_note": "best_combo + Dual Momentum + STR Reversal + Low-Vol Tilt"
     }
   },
   "default_mode": "stat_only"

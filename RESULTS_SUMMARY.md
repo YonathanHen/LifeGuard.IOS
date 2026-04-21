@@ -78,6 +78,7 @@
 | `results/*.json` | תוצאות backtest לפי תאריך |
 | `ALGORITHM_SPEC.md` | מפרט אלגוריתם + פרמטרים + תוצאות |
 | `RESULTS_SUMMARY.md` | מסמך זה — סיכום מרוכז |
+| **`docs/RESEARCH_DECISIONS_LOG.md`** | **יומן מסקנות מחקר** — החלטות A/B, תאריכים, קבצי JSON, שחזור |
 
 ---
 

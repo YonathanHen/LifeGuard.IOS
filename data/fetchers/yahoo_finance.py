@@ -72,20 +72,50 @@ def fetch_yahoo(
     session = _get_session()
     ticker = yf.Ticker(symbol, session=session) if session else yf.Ticker(symbol)
     df = pd.DataFrame()
+    last_err: Optional[Exception] = None
 
-    for attempt in range(3):
+    # Ticker.history — Yahoo sometimes returns malformed JSON ('NoneType' not subscriptable)
+    for attempt in range(5):
         try:
             df = ticker.history(start=_start, end=_end, interval=interval, auto_adjust=False)
             if df is not None and not df.empty:
                 break
-        except (TypeError, KeyError) as e:
-            if attempt < 2:
-                time.sleep(2 * (attempt + 1))
-                continue
-            raise ValueError(f"Yahoo Finance failed for {symbol} (retried): {e}") from e
+            df = pd.DataFrame()
+        except (TypeError, KeyError, ValueError) as e:
+            last_err = e
+        except Exception as e:
+            last_err = e
+        time.sleep(1.5 * (attempt + 1))
+
+    # Fallback: yf.download uses a different code path; often works when history() breaks
+    if df is None or df.empty:
+        for attempt in range(3):
+            try:
+                raw = yf.download(
+                    symbol,
+                    start=_start,
+                    end=_end,
+                    interval=interval,
+                    auto_adjust=False,
+                    progress=False,
+                    threads=False,
+                )
+                if raw is not None and not raw.empty:
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        raw.columns = [c[0] if isinstance(c, tuple) else c for c in raw.columns]
+                    df = raw
+                    break
+            except Exception as e:
+                last_err = e
+            time.sleep(2 * (attempt + 1))
 
     if df is None or df.empty:
-        raise ValueError(f"Yahoo Finance returned no data for {symbol}")
+        hint = " Retry later or set SIGNALFLOW_SSL_BYPASS=1 if behind a proxy."
+        if last_err:
+            raise ValueError(
+                f"Yahoo Finance failed for {symbol} after retries: {last_err}.{hint}"
+            ) from last_err
+        raise ValueError(f"Yahoo Finance returned no data for {symbol}.{hint}")
 
     if df.empty or len(df) < min_rows:
         raise ValueError(f"Insufficient data for {symbol}")

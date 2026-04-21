@@ -66,6 +66,12 @@ python scripts/run_backtest.py --mode best_combo --period 3y --end-date 2026-03-
 
 ---
 
+## אסטרטגיות מורחבות (Multi-Universe, Dual Momentum, וכו')
+
+ראה **docs/EXPANDED_STRATEGIES.md** — Multi-Stock Universe, Low-Vol Tilt, Dual Momentum, Short-Term Reversal, Sector Rotation.
+
+---
+
 ## best_combo_cb — Circuit Breaker + Drawdown Throttle
 
 | Mode | תיאור | דגלים |

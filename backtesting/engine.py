@@ -109,6 +109,10 @@ class BacktestEngine:
         kelly_frac: float = 0.0,
         circuit_breaker_pct: Optional[float] = None,
         drawdown_throttle: bool = False,
+        dual_momentum: bool = False,
+        short_term_reversal: bool = False,
+        low_vol_tilt: bool = False,
+        momentum_12_1_filter: bool = False,
     ):
         self.symbol = symbol
         self.horizon = horizon
@@ -126,6 +130,10 @@ class BacktestEngine:
         self.kelly_frac = kelly_frac
         self.circuit_breaker_pct = circuit_breaker_pct
         self.drawdown_throttle = drawdown_throttle
+        self.dual_momentum = dual_momentum
+        self.short_term_reversal = short_term_reversal
+        self.low_vol_tilt = low_vol_tilt
+        self.momentum_12_1_filter = momentum_12_1_filter
 
     def run(self, period: str = "3y", end_date: Optional[str] = None) -> BacktestResult:
         """Run backtest, return metrics. Use end_date for year-specific runs (e.g. 2022)."""
@@ -149,6 +157,12 @@ class BacktestEngine:
         else:
             dv_aligned = None
         vol_aligned = df["volatility"].reindex(returns.index).ffill() if "volatility" in df.columns else None
+
+        # Dual Momentum: SP500 12m return for absolute momentum
+        sp_aligned = sp.reindex(returns.index).ffill() if self.dual_momentum and not sp.empty else None
+
+        # Low-Vol Tilt: when vol > 75th percentile of 60d, scale pos by 0.5
+        vol_75_rolling = vol_aligned.rolling(60, min_periods=40).quantile(0.75) if self.low_vol_tilt and vol_aligned is not None else None
 
         # Pre-compute ML probs if use_ml
         ml_cache = {}
@@ -209,9 +223,34 @@ class BacktestEngine:
                         has_edge = has_ens
 
                     pos = 1 if has_edge and arima_out["direction"] == "up" else 0
+
+                    # Short-Term Reversal: in mean_reverting, only enter when oversold (1m return < 0)
+                    if self.short_term_reversal and pos == 1 and regime_name == "mean_reverting":
+                        start_1m = max(0, i - 20)
+                        ret_1m = float((1 + returns.iloc[start_1m:i + 1]).prod() - 1.0) if i >= 20 else 0.0
+                        if ret_1m >= 0:  # not oversold
+                            pos = 0
                 except Exception:
                     pos = 0
                     regime_name = "unknown"
+
+            # Dual Momentum: if SP500 12m < risk-free, go to cash
+            if self.dual_momentum and pos == 1 and sp_aligned is not None and i >= 252:
+                j = i - 252
+                sp_now = float(sp_aligned.iloc[i])
+                sp_252 = float(sp_aligned.iloc[j])
+                if sp_252 > 1e-8:
+                    sp_12m = (sp_now / sp_252) - 1.0
+                    if sp_12m < 0.04:  # risk-free approx
+                        pos = 0
+
+            # Time-series momentum 12-1 (skip ~1 month): long only if past winners
+            if self.momentum_12_1_filter and pos == 1 and i >= 273:
+                mom_win = returns.iloc[i - 252 : i - 21]
+                if len(mom_win) >= 200:
+                    mom_12_1 = float((1 + mom_win).prod() - 1.0)
+                    if mom_12_1 <= 0:
+                        pos = 0
 
             positions.append(pos)
             regimes.append(regime_name)
@@ -232,6 +271,13 @@ class BacktestEngine:
                 if vol_i > 1e-8:
                     vol_mult = min(1.5, max(0.25, self.vol_target_ann / vol_i))
                     pos_mult *= vol_mult
+
+            # Low-Vol Tilt: scale down when vol in top quartile (last 60d)
+            if self.low_vol_tilt and pos == 1 and vol_75_rolling is not None and i < len(vol_75_rolling):
+                vol_i = float(vol_aligned.iloc[i]) if vol_aligned is not None else 0.0
+                vol_75_i = float(vol_75_rolling.iloc[i])
+                if not np.isnan(vol_75_i) and vol_i >= vol_75_i:
+                    pos_mult *= 0.5
 
             # Circuit Breaker & Drawdown Throttle (from realized returns so far)
             if (self.circuit_breaker_pct is not None or self.drawdown_throttle) and len(realized_returns) >= 10:

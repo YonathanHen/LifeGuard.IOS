@@ -37,6 +37,7 @@ from models.rules.circuit_breaker import (
     get_paper_equity_drawdown,
 )
 from models.rules.event_filter import is_event_day
+from models.rules.dual_momentum import check_absolute_momentum
 
 
 def _disaster_threshold() -> float:
@@ -77,6 +78,9 @@ def run_daily_decision(
     drawdown_throttle: bool = False,
     use_event_filter: bool = True,
     prior_decisions: list | None = None,
+    dual_momentum: bool = False,
+    short_term_reversal: bool = False,
+    low_vol_tilt: bool = False,
 ) -> dict:
     """
     Run full prediction logic for one day (point-in-time).
@@ -149,12 +153,35 @@ def run_daily_decision(
                     ml_blocked = True
                     has_edge_final = False
 
+    # Short-Term Reversal: in mean_reverting, only enter when oversold (1m return < 0)
+    if short_term_reversal and has_edge_final and regime_name == "mean_reverting":
+        returns_ser = returns.dropna()
+        if len(returns_ser) >= 22:
+            ret_1m = float((1 + returns_ser.iloc[-22:]).prod() - 1.0)
+            if ret_1m >= 0:  # not oversold
+                has_edge_final = False
+
+    # Dual Momentum: if SP500 12m < risk-free, go to cash
+    if dual_momentum and has_edge_final and prediction_date is not None:
+        pred_str = prediction_date.strftime("%Y-%m-%d")
+        go_cash, _ = check_absolute_momentum(pred_str, lookback_months=12, risk_free_annual=0.04)
+        if go_cash:
+            has_edge_final = False
+
     # best_combo position sizing hint: trend=50%, mean_reverting=200%, else 100%
     position_pct = 100
     if has_edge_final and regime_name == "trend":
         position_pct = 50
     elif has_edge_final and regime_name == "mean_reverting":
         position_pct = 200  # MR x2
+
+    # Low-Vol Tilt: when vol in top quartile (60d), scale down
+    if low_vol_tilt and has_edge_final and "volatility" in df.columns:
+        vol = df["volatility"].dropna()
+        if len(vol) >= 60:
+            vol_75 = vol.iloc[-60:].quantile(0.75)
+            if float(vol.iloc[-1]) >= float(vol_75):
+                position_pct = max(0, int(position_pct * 0.5))
 
     # Circuit Breaker & Drawdown Throttle
     circuit_breaker_tripped = False
@@ -227,8 +254,11 @@ def main():
     ap.add_argument("--batch-end", default=None, help="Batch: end date YYYY-MM-DD")
     ap.add_argument("--no-ml", action="store_true", help="Stat Only — skip LSTM (match best_combo backtest)")
     ap.add_argument("--circuit-breaker", type=float, default=None, metavar="PCT", help="Block when drawdown >= PCT (e.g. 0.15). Default: off")
-    ap.add_argument("--drawdown-throttle", action="store_true", help="Scale position when in drawdown (10%%→0.75x, 15%%→0.5x)")
+    ap.add_argument("--drawdown-throttle", action="store_true", help="Scale position when in drawdown (10%%->0.75x, 15%%->0.5x)")
     ap.add_argument("--no-event-filter", action="store_true", help="Disable event calendar filter (earnings, FOMC, etc.)")
+    ap.add_argument("--dual-momentum", action="store_true", help="Absolute momentum: if SP500 12m < 4%%, go to cash")
+    ap.add_argument("--short-term-reversal", action="store_true", help="Mean-reverting: only enter when oversold (1m < 0)")
+    ap.add_argument("--low-vol-tilt", action="store_true", help="Scale down when vol in top quartile")
     ap.add_argument("--dry-run", action="store_true", help="Print only, do not save")
     args = ap.parse_args()
 
@@ -267,6 +297,9 @@ def main():
                     drawdown_throttle=args.drawdown_throttle,
                     use_event_filter=not args.no_event_filter,
                     prior_decisions=decisions,
+                    dual_momentum=args.dual_momentum,
+                    short_term_reversal=args.short_term_reversal,
+                    low_vol_tilt=args.low_vol_tilt,
                 )
             except Exception as e:
                 print(f"  ERROR {end_date}: {e}")
@@ -299,6 +332,12 @@ def main():
         flags.append("DD-Throttle")
     if not args.no_event_filter:
         flags.append("EventFilter")
+    if args.dual_momentum:
+        flags.append("DualMom")
+    if args.short_term_reversal:
+        flags.append("STR-Reversal")
+    if args.low_vol_tilt:
+        flags.append("LowVol-Tilt")
     print("SignalFlow — Paper Trading Daily Logger")
     print(f"  Symbol: {args.symbol}  End date: {end_date}" + ("  [" + ", ".join(flags) + "]" if flags else ""))
 
@@ -310,6 +349,9 @@ def main():
             circuit_breaker_pct=args.circuit_breaker,
             drawdown_throttle=args.drawdown_throttle,
             use_event_filter=not args.no_event_filter,
+            dual_momentum=args.dual_momentum,
+            short_term_reversal=args.short_term_reversal,
+            low_vol_tilt=args.low_vol_tilt,
         )
     except Exception as e:
         print(f"\n*** ERROR: {e}")

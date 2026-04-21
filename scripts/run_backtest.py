@@ -101,6 +101,9 @@ def main():
     ap.add_argument("--kelly-frac", type=float, default=None, help="Fractional Kelly sizing (0.25-0.5). Scale by rolling hit rate. Default: off")
     ap.add_argument("--circuit-breaker", type=float, default=None, metavar="PCT", help="Block positions when drawdown >= PCT (e.g. 0.15). Default: off")
     ap.add_argument("--drawdown-throttle", action="store_true", help="Scale position when in drawdown (10%%→0.75x, 15%%→0.5x)")
+    ap.add_argument("--dual-momentum", action="store_true", help="Absolute momentum: if SP500 12m < 4%%, go to cash")
+    ap.add_argument("--short-term-reversal", action="store_true", help="Mean-reverting: only enter when oversold (1m return < 0)")
+    ap.add_argument("--low-vol-tilt", action="store_true", help="Scale down when vol in top quartile")
     ap.add_argument("--symbols", type=str, default=None, help="Comma-separated symbols (e.g. AAPL,SPY,QQQ). Run multi-symbol, aggregate results.")
     args = ap.parse_args()
 
@@ -159,6 +162,12 @@ def main():
         flags.append(f"CB>={engine_kw['circuit_breaker_pct']:.0%}")
     if engine_kw.get("drawdown_throttle"):
         flags.append("DD-Throttle")
+    if engine_kw.get("dual_momentum"):
+        flags.append("DualMom")
+    if engine_kw.get("short_term_reversal"):
+        flags.append("STR-Reversal")
+    if engine_kw.get("low_vol_tilt"):
+        flags.append("LowVol-Tilt")
     flags_str = " ".join(flags) if flags else ""
 
     results_by_symbol = []

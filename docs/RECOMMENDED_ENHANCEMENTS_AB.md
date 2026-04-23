@@ -79,6 +79,7 @@ python scripts/run_enhancement_ab.py --battery full --period 3y --json-out stora
 
 ## 6. קישורים
 
+- `docs/NEXT_EXECUTION_PLAN.md` — **מה לעשות עכשיו** (שלבים)
 - `docs/ALGORITHMIC_STRATEGIES_CATALOG_RESEARCH.md`
 - `docs/STRATEGY_RESEARCH_AND_RECOMMENDATIONS.md`
 - `HEDGE_FUNDS_ANALYSIS_AND_ROADMAP.md`

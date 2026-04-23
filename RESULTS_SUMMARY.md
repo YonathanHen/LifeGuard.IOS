@@ -88,6 +88,9 @@
 # Backtest (נשמר אוטומטית)
 python scripts/run_backtest_with_ml.py --period 3y
 
+# אותו backtest עם low_vol_tilt (מאושר ב-RESEARCH_DECISIONS_LOG)
+python scripts/run_backtest_with_ml.py --period 3y --low-vol-tilt --label stat_ml_lowvol_3y
+
 # Validation — daily + weekly + regime (נשמר אוטומטית)
 python scripts/run_validation_with_ml.py
 

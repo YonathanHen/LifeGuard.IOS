@@ -1,0 +1,223 @@
+# מטריצת ריצות מחקר — כל ריצה פלט נפרד, בלי לשנות ברירות מחדל בקוד.
+# לכל ריצה חובה שדה engine: סיכום אלגוריתמים + דגלים (מועתק למניפסט JSON).
+# הרצה: python scripts/run_research_suite.py --list
+#         python scripts/run_research_suite.py
+#         python scripts/run_research_suite.py --quick --group single
+
+defaults:
+  symbol: AAPL
+  period_full: 3y
+  period_quick: 1y
+  multi_limit_full: 10
+  multi_limit_quick: 3
+
+runs:
+  # --- סימבול בודד (run_backtest_with_ml) — השוואות נשמרות ב-backtest_runs.json עם --label ייחודי
+  - id: s01_bwml_baseline
+    group: single
+    title: "Stat+ML, Negative Filter, בלי low_vol / בלי dual (נקודת בסיס להשוואה)"
+    integrates: "שלב 1 ב-NEXT_EXECUTION_PLAN; משלים רשומה #1 ב-RESEARCH_DECISIONS_LOG"
+    engine: "סקריפט run_backtest_with_ml. BacktestEngine: Stat (ARIMA+GARCH, regime, rules) + LSTM ensemble, ml_negative_filter=true, ml_disaster_threshold=0.8, ml_threshold=0.6, horizon=daily. low_vol_tilt=false, dual_momentum=false. עמלות 5+3 bps."
+    script: scripts/run_backtest_with_ml.py
+    args:
+      - --period
+      - "{period}"
+      - --symbol
+      - "{symbol}"
+      - --label
+      - suite_s01_bwml_baseline
+
+  - id: s02_bwml_lowvol
+    group: single
+    title: "Stat+ML + --low-vol-tilt (מאושר ביומן — Sharpe↑ DD↓)"
+    integrates: "אותו מסלול שגרתי מומלץ; תוצאה נפרדת ב-label"
+    engine: "כמו s01 + BacktestEngine low_vol_tilt=true (הקטנת חשיפה ברבעון וול גבוה)."
+    script: scripts/run_backtest_with_ml.py
+    args:
+      - --period
+      - "{period}"
+      - --symbol
+      - "{symbol}"
+      - --low-vol-tilt
+      - --label
+      - suite_s02_bwml_lowvol
+
+  - id: s03_bwml_dual
+    group: single
+    title: "Stat+ML + --dual-momentum (לבדיקה נפרדת — לא מעורבב עם low_vol)"
+    integrates: "RECOMMENDED_ENHANCEMENTS_AB / יומן — להשוואה מבודדת"
+    engine: "כמו s01 + dual_momentum=true (מזומן אם מומנטום SPY 12חודש חלש)."
+    script: scripts/run_backtest_with_ml.py
+    args:
+      - --period
+      - "{period}"
+      - --symbol
+      - "{symbol}"
+      - --dual-momentum
+      - --label
+      - suite_s03_bwml_dual
+
+  - id: s04_bwml_lowvol_dual
+    group: single
+    title: "Stat+ML + שני הדגלים (שילוב — לניתוח; ביומן low_vol לבד עדיף)"
+    integrates: "רשומה #1: low_vol+dual לא עדיף על low_vol לבד"
+    engine: "כמו s01 + low_vol_tilt=true + dual_momentum=true."
+    script: scripts/run_backtest_with_ml.py
+    args:
+      - --period
+      - "{period}"
+      - --symbol
+      - "{symbol}"
+      - --low-vol-tilt
+      - --dual-momentum
+      - --label
+      - suite_s04_bwml_lowvol_dual
+
+  - id: s05_bwml_stat_only
+    group: single
+    title: "Stat בלבד (--no-ml) — אותן עמלות/slippage, בלי LSTM"
+    integrates: "השוואה למסלול ML; paper יכול להתאים ל-best_combo"
+    engine: "run_backtest_with_ml --no-ml: רק Stat core, ללא LSTM/ensemble."
+    script: scripts/run_backtest_with_ml.py
+    args:
+      - --period
+      - "{period}"
+      - --symbol
+      - "{symbol}"
+      - --no-ml
+      - --label
+      - suite_s05_bwml_stat_only
+
+  # --- יקום (run_multi_universe) — כל ריצה JSON נפרד תחת storage/research_runs/
+  - id: m01_multi_best_combo
+    group: multi
+    title: "יקום — פרופיל best_combo (ברירת מחדל, legacy)"
+    integrates: "WORKING_MULTI_UNIVERSE_PROFILES — לא משנה התנהגות קיימת"
+    engine: "run_multi_universe --profile best_combo. BacktestEngine לכל סימבול: use_ml=false, mean_rev_mult=2, atr_stop_mult=2, vol_target_ann=0.15, low_vol/dual כבויים."
+    script: scripts/run_multi_universe.py
+    args:
+      - --profile
+      - best_combo
+      - --period
+      - "{period}"
+      - --limit
+      - "{multi_limit}"
+      - --out
+      - "{out_dir}/suite_m01_best_combo_{period_slug}.json"
+
+  - id: m02_multi_best_combo_lowvol
+    group: multi
+    title: "יקום — best_combo + --low-vol-tilt בלבד"
+    integrates: "שלב 2 NEXT_EXECUTION_PLAN; לא מעורבב עם production"
+    engine: "כמו m01 + low_vol_tilt=true."
+    script: scripts/run_multi_universe.py
+    args:
+      - --profile
+      - best_combo
+      - --period
+      - "{period}"
+      - --limit
+      - "{multi_limit}"
+      - --low-vol-tilt
+      - --out
+      - "{out_dir}/suite_m02_best_combo_lowvol_{period_slug}.json"
+
+  - id: m03_multi_production
+    group: multi
+    title: "יקום — --profile production (כמו run_backtest_with_ml)"
+    integrates: "WORKING_MULTI_UNIVERSE_PROFILES — Stat+ML + negative filter"
+    engine: "run_multi_universe --profile production. BacktestEngine: use_ml=true, ml_negative_filter, ml_disaster_threshold מה-CLI (ברירת 0.8), mean_rev_mult=1, atr_stop_mult=0, vol_target_ann=null."
+    script: scripts/run_multi_universe.py
+    args:
+      - --profile
+      - production
+      - --period
+      - "{period}"
+      - --limit
+      - "{multi_limit}"
+      - --out
+      - "{out_dir}/suite_m03_production_{period_slug}.json"
+
+  - id: m04_multi_production_lowvol
+    group: multi
+    title: "יקום — production + --low-vol-tilt"
+    integrates: "מסלול מומלץ לניסוי multi אחרי m03"
+    engine: "כמו m03 + low_vol_tilt=true."
+    script: scripts/run_multi_universe.py
+    args:
+      - --profile
+      - production
+      - --period
+      - "{period}"
+      - --limit
+      - "{multi_limit}"
+      - --low-vol-tilt
+      - --out
+      - "{out_dir}/suite_m04_production_lowvol_{period_slug}.json"
+
+  - id: m05_multi_production_statonly
+    group: multi
+    title: "יקום — production Stat בלבד (--no-ml)"
+    integrates: "השוואה ל-m03 בלי LSTM"
+    engine: "כמו m03 אך use_ml=false (--no-ml); שאר פרמטרי production נשמרים."
+    script: scripts/run_multi_universe.py
+    args:
+      - --profile
+      - production
+      - --period
+      - "{period}"
+      - --limit
+      - "{multi_limit}"
+      - --no-ml
+      - --out
+      - "{out_dir}/suite_m05_production_statonly_{period_slug}.json"
+
+  - id: m06_multi_production_dual
+    group: multi
+    title: "יקום — production + --dual-momentum (מבודד מ-low_vol)"
+    integrates: "לבדיקה נפרדת מ-m04"
+    engine: "כמו m03 + dual_momentum=true."
+    script: scripts/run_multi_universe.py
+    args:
+      - --profile
+      - production
+      - --period
+      - "{period}"
+      - --limit
+      - "{multi_limit}"
+      - --dual-momentum
+      - --out
+      - "{out_dir}/suite_m06_production_dual_{period_slug}.json"
+
+  # --- סוללת A/B (קובץ JSON אחד לכל ריצה — תרחישים פנימיים לא מתערבבים)
+  - id: ab_helpful_ml
+    group: ab
+    title: "סוללת helpful + Stat+ML (baseline, dual, low_vol, שניהם)"
+    integrates: "זהה לרוח run_enhancement_ab מהיומן; פלט נפרד בתיקיית suite"
+    script: scripts/run_enhancement_ab.py
+    args:
+      - --battery
+      - helpful
+      - --period
+      - "{period}"
+      - --symbol
+      - "{symbol}"
+      - --with-ml
+      - --json-out
+      - "{out_dir}/suite_ab_helpful_ml_{period_slug}.json"
+
+  - id: ab_helpful_stat
+    group: ab
+    title: "סוללת helpful ללא ML (השוואת דגלים על Stat בלבד)"
+    integrates: "משלים ab_helpful_ml בלי ערבוב תוצאות ML"
+    engine: "run_enhancement_ab --battery helpful ללא --with-ml; אותם תרחישי דגלים על Stat בלבד."
+    script: scripts/run_enhancement_ab.py
+    args:
+      - --battery
+      - helpful
+      - --period
+      - "{period}"
+      - --symbol
+      - "{symbol}"
+      - --json-out
+      - "{out_dir}/suite_ab_helpful_stat_{period_slug}.json"

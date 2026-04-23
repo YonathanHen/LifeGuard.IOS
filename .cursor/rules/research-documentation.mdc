@@ -1,0 +1,20 @@
+---
+description: SignalFlow — תיעוד חובה אחרי הרצות מחקר ובקטסט
+globs:
+  - scripts/**/*.py
+  - backtesting/**/*.py
+  - config/research_run_matrix.yaml
+  - docs/RESEARCH*.md
+  - docs/*DECISIONS*.md
+alwaysApply: false
+---
+
+# תיעוד הרצות מחקר
+
+בכל סיום ניסוי בקטסט, סוויטה (`run_research_suite.py`), או שינוי פרמטרים משמעותי:
+
+1. עדכן **`docs/RESEARCH_DECISIONS_LOG.md`** ברשומה חדשה (תבנית בתחתית הקובץ).
+2. חובה לכלול: **איזה אלגוריתמים ודגלים** (Stat/ML, `ml_negative_filter`, `ml_disaster_threshold`, `low_vol_tilt`, `dual_momentum`, פרופיל `best_combo`/`production`, תקופה, סימבול/יקום, bps), **תוצאות עיקריות**, **מסקנות מפורשות**, **נתיבי קבצי גולם** (`storage/...`, מניפסט).
+3. אחרי סוויטה: המניפסט ב־`storage/research_runs/_suite_manifest_*.json` כולל לכל ריצה שדה **`engine`** — אפשר להעתיק או לסכם ממנו.
+
+אל תסתפק ב“הרצה עברה”; תמיד חבר מספרים להחלטה או לשאלה פתוחה.

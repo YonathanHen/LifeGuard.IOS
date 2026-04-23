@@ -131,6 +131,16 @@ def main():
     ap.add_argument("--save-equity", type=str, help="Save equity curves to CSV")
     ap.add_argument("--label", type=str, help="Label for saved run (e.g. legacy_and_61pct)")
     ap.add_argument("--plot", action="store_true", help="Plot equity curve comparison (requires matplotlib)")
+    ap.add_argument(
+        "--low-vol-tilt",
+        action="store_true",
+        help="Scale position x0.5 when realized vol in top quartile (60d). See RESEARCH_DECISIONS_LOG.md",
+    )
+    ap.add_argument(
+        "--dual-momentum",
+        action="store_true",
+        help="Go flat when SPY 12m return < ~risk-free (see models/rules/dual_momentum.py)",
+    )
     args = ap.parse_args()
 
     commission = 0.0 if args.no_costs else 5.0
@@ -141,15 +151,27 @@ def main():
     print("=" * 65)
     print("SignalFlow — Backtest with ML")
     print("=" * 65)
-    print(f"Symbol: {args.symbol} | Period: {args.period} | Horizon: {args.horizon} | Costs: {'off' if args.no_costs else '5+3 bps'}")
+    extras = []
+    if args.low_vol_tilt:
+        extras.append("low_vol_tilt")
+    if args.dual_momentum:
+        extras.append("dual_momentum")
+    extra_s = f" | Extras: {','.join(extras)}" if extras else ""
+    print(f"Symbol: {args.symbol} | Period: {args.period} | Horizon: {args.horizon} | Costs: {'off' if args.no_costs else '5+3 bps'}{extra_s}")
+
+    eng_kw = dict(
+        commission_bps=commission,
+        slippage_bps=slippage,
+        low_vol_tilt=args.low_vol_tilt,
+        dual_momentum=args.dual_momentum,
+    )
 
     # Stat only
     engine_stat = BacktestEngine(
         symbol=args.symbol,
         horizon=args.horizon,
         use_ml=False,
-        commission_bps=commission,
-        slippage_bps=slippage,
+        **eng_kw,
     )
     r_stat = engine_stat.run(period=args.period)
     _print_result("Stat Core only", r_stat)
@@ -166,8 +188,7 @@ def main():
             ml_threshold=0.6,
             ml_negative_filter=neg_filter,
             ml_disaster_threshold=args.disaster_threshold,
-            commission_bps=commission,
-            slippage_bps=slippage,
+            **eng_kw,
         )
         ml_label = f"Stat + ML (neg filter P_down>{args.disaster_threshold})" if neg_filter else "Stat + ML (0.60)"
 
@@ -297,12 +318,22 @@ def main():
             "mode": "negative_filter" if neg_filter else "legacy_and",
             "disaster_threshold": args.disaster_threshold if neg_filter else None,
             "ml_threshold": 0.6,
+            "low_vol_tilt": args.low_vol_tilt,
+            "dual_momentum": args.dual_momentum,
         }
         registry_path = Path(__file__).parent.parent / "storage" / "backtest_runs.json"
         _save_backtest_run(params, r_stat, r_ml, registry_path, args.label)
     else:
         # Auto-save (Stat only)
-        params = {"symbol": args.symbol, "period": args.period, "horizon": args.horizon, "commission_bps": commission, "slippage_bps": slippage}
+        params = {
+            "symbol": args.symbol,
+            "period": args.period,
+            "horizon": args.horizon,
+            "commission_bps": commission,
+            "slippage_bps": slippage,
+            "low_vol_tilt": args.low_vol_tilt,
+            "dual_momentum": args.dual_momentum,
+        }
         registry_path = Path(__file__).parent.parent / "storage" / "backtest_runs.json"
         _save_backtest_run(params, r_stat, None, registry_path, args.label)
 

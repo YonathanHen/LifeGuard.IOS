@@ -203,6 +203,9 @@
 | **GO_NO_GO_FRAMEWORK.md** | מתי עוצרים פיתוח, מתי עוברים למסחר |
 | **docs/RESEARCH_DECISIONS_LOG.md** | יומן מסקנות מחקר (A/B, שחזור) |
 | **docs/RECOMMENDED_ENHANCEMENTS_AB.md** | פרוטוקול שיפורי engine + הפניה ליומן |
+| **docs/NEXT_EXECUTION_PLAN.md** | תוכנית ביצוע שלב־אחר־שלב (מה לעשות עכשיו) |
+| **docs/WORKING_MULTI_UNIVERSE_PROFILES.md** | מה עובד: `run_multi_universe` — best_combo (ברירת מחדל) vs production |
+| **docs/INSTITUTIONAL_DIRECTIONS_FEASIBILITY.md** | היתכנות פקטורים / חתך / LTR |
 | **storage/backtest_runs.json** | היסטוריית הרצות (שמירה אוטומטית) |
 | **TRADING_READINESS_PLAN.md** | תוכנית מוכנות למסחר |
 | **ROADMAP_V2.md** | תכנון כללי |

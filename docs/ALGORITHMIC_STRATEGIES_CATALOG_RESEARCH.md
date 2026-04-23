@@ -6,7 +6,8 @@
 **שיטת עבודה:** סקירת ספרות, מקורות אקדמיים ותעשייתיים, וחיפושים ממוקדים. **לא** הופעלו בוטי מסחר חיים ולא בוצעה מסחר אמיתי — אין כאן תחזית אישית או ייעוץ השקעות.
 
 **מסמכים קשורים בפרויקט:**  
-`docs/STRATEGY_RESEARCH_AND_RECOMMENDATIONS.md` (מה יש אצלנו), `HEDGE_FUNDS_ANALYSIS_AND_ROADMAP.md`, `GO_NO_GO_FRAMEWORK.md`, `ALGORITHM_SPEC.md`.
+`docs/STRATEGY_RESEARCH_AND_RECOMMENDATIONS.md` (מה יש אצלנו), `HEDGE_FUNDS_ANALYSIS_AND_ROADMAP.md`, `GO_NO_GO_FRAMEWORK.md`, `ALGORITHM_SPEC.md`.  
+**היתכנות ושילוב בפועל:** [`INSTITUTIONAL_DIRECTIONS_FEASIBILITY.md`](INSTITUTIONAL_DIRECTIONS_FEASIBILITY.md).
 
 ---
 

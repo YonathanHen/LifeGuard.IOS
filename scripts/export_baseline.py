@@ -72,6 +72,7 @@ def main():
         "files_to_preserve": [
             "storage/lstm_model.pt",
             "storage/lstm_model.json",
+            "run_outputs/backtest_runs.json",
             "storage/backtest_runs.json",
             "storage/paper_decisions.json",
             "storage/paper_metrics.json",

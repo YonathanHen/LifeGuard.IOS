@@ -4,8 +4,8 @@ Run isolated research backtests from config/research_run_matrix.yaml.
 
 Each run uses explicit CLI flags only — no change to engine defaults.
 Outputs:
-  - run_backtest_with_ml: labels in storage/backtest_runs.json (unique --label per run)
-  - run_multi_universe / run_enhancement_ab: JSON under storage/research_runs/
+  - run_backtest_with_ml: labels in run_outputs/backtest_runs.json (+ mirror storage/)
+  - run_multi_universe / run_enhancement_ab: JSON under run_outputs/research_runs/
 
 Usage:
   python scripts/run_research_suite.py --list
@@ -72,7 +72,7 @@ def main() -> int:
     period = (defaults.get("period_quick") if args.quick else defaults.get("period_full")) or "3y"
     multi_limit = defaults.get("multi_limit_quick" if args.quick else "multi_limit_full") or 10
     symbol = args.symbol or defaults.get("symbol") or "AAPL"
-    out_dir = root / "storage" / "research_runs"
+    out_dir = root / "run_outputs" / "research_runs"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     period_slug = period.replace(" ", "")
@@ -170,7 +170,7 @@ def main() -> int:
         with open(man_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
         print(f"\nManifest: {man_path}")
-        print("\nתיעוד (חובה): docs/RESEARCH_DECISIONS_LOG.md — אלגוריתמים/דגלים + מסקנות + קישור למניפסט/JSON.")
+        print("\nתיעוד (חובה): docs/RESEARCH_DECISIONS_LOG.md — אלגוריתמים/דגלים + מסקנות + קישור למניפסט ב־run_outputs/research_runs/.")
 
     if failures:
         print(f"\nFailed ({len(failures)}): {', '.join(failures)}")

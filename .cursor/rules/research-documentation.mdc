@@ -15,6 +15,6 @@ alwaysApply: false
 
 1. עדכן **`docs/RESEARCH_DECISIONS_LOG.md`** ברשומה חדשה (תבנית בתחתית הקובץ).
 2. חובה לכלול: **איזה אלגוריתמים ודגלים** (Stat/ML, `ml_negative_filter`, `ml_disaster_threshold`, `low_vol_tilt`, `dual_momentum`, פרופיל `best_combo`/`production`, תקופה, סימבול/יקום, bps), **תוצאות עיקריות**, **מסקנות מפורשות**, **נתיבי קבצי גולם** (`storage/...`, מניפסט).
-3. אחרי סוויטה: המניפסט ב־`storage/research_runs/_suite_manifest_*.json` כולל לכל ריצה שדה **`engine`** — אפשר להעתיק או לסכם ממנו.
+3. אחרי סוויטה: המניפסט ב־`run_outputs/research_runs/_suite_manifest_*.json` כולל לכל ריצה שדה **`engine`** — אפשר להעתיק או לסכם ממנו.
 
 אל תסתפק ב“הרצה עברה”; תמיד חבר מספרים להחלטה או לשאלה פתוחה.

@@ -42,6 +42,8 @@ class BacktestResult:
     exposure_pct: float = 0.0  # Time in market (% of days)
     n_days: int = 0
     by_regime: Optional[Dict[str, "BacktestResult"]] = None
+    #: תשואות יומיות של האסטרטגיה (מסונכרנות לתאריך של אותו יום מסחר); None בנתיבים ישנים/מקוצרים
+    daily_returns: Optional[pd.Series] = None
 
 
 def _precompute_ml_probs(
@@ -314,7 +316,10 @@ class BacktestEngine:
                 ret -= round_trip_cost
             realized_returns.append(ret)
 
-        strat_returns = pd.Series(realized_returns)
+        idx_ret = returns.index[self.train_min_days + 1 : len(returns)]
+        strat_returns = pd.Series(realized_returns, index=idx_ret)
+        if len(strat_returns) != len(idx_ret):
+            strat_returns = pd.Series(realized_returns)
 
         sharpe = self._sharpe(strat_returns)
         dd = self._max_drawdown(strat_returns)
@@ -349,9 +354,10 @@ class BacktestEngine:
                     total_return=float((1 + sub_ret).prod() - 1),
                     n_trades=sum(sub_pos),
                     hit_rate=sub_hits / len(sub_long) if sub_long else 0.0,
-                    equity_curve=sub_ret,
+                    equity_curve=(1 + sub_ret).cumprod(),
                     exposure_pct=100.0 * sum(sub_pos) / len(sub_pos) if sub_pos else 0.0,
                     n_days=len(indices),
+                    daily_returns=sub_ret,
                 )
 
         return BacktestResult(
@@ -364,6 +370,7 @@ class BacktestEngine:
             exposure_pct=exposure_pct,
             n_days=len(positions),
             by_regime=by_regime,
+            daily_returns=strat_returns if isinstance(strat_returns.index, pd.DatetimeIndex) else None,
         )
 
     def _sharpe(self, returns: pd.Series, risk_free: float = 0.0) -> float:

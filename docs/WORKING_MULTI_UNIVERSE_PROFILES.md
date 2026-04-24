@@ -32,6 +32,7 @@
 
 ## קישורים
 
+- `docs/HOT_UNIVERSE_PORTFOLIO_PLAN.md` — דירוג יקום (`rank_universe`) + `--from-rank-json` ב־`run_multi_universe` / `run_hot_ranked_backtest.py`
 - `docs/RESEARCH_RUN_SUITE.md` — הרצת **כל** שילובי הפרופיל/דגלים בנפרד (`run_research_suite.py` + YAML)
 - `docs/INSTITUTIONAL_DIRECTIONS_FEASIBILITY.md` — למה זה חשוב לחתך
 - `docs/NEXT_EXECUTION_PLAN.md` — שלב 2 multi-symbol

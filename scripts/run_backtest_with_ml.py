@@ -47,14 +47,22 @@ def _read_model_meta() -> dict:
     return {}
 
 
+def _backtest_registry_paths(repo_root: Path) -> tuple[Path, Path]:
+    """Primary copy under run_outputs/ (tracked); mirror under storage/ (local gitignore)."""
+    return (
+        repo_root / "run_outputs" / "backtest_runs.json",
+        repo_root / "storage" / "backtest_runs.json",
+    )
+
+
 def _save_backtest_run(
     params: dict,
     r_stat: BacktestResult,
     r_ml: BacktestResult | None,
-    registry_path: Path,
     label: str | None,
+    repo_root: Path,
 ):
-    """Append run to storage/backtest_runs.json."""
+    """Append run to run_outputs/backtest_runs.json and mirror to storage/backtest_runs.json."""
     meta = _read_model_meta()
     entry = {
         "date": datetime.utcnow().isoformat() + "Z",
@@ -80,21 +88,35 @@ def _save_backtest_run(
             "hit_rate": round(r_ml.hit_rate, 4),
             "exposure_pct": round(r_ml.exposure_pct, 2),
         }
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    out_reg, stor_reg = _backtest_registry_paths(repo_root)
     data: dict = {}
-    if registry_path.exists():
+    if out_reg.exists():
         try:
-            with open(registry_path) as f:
+            with open(out_reg, encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             pass
+    if not data.get("runs") and stor_reg.exists():
+        try:
+            with open(stor_reg, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            pass
+    if "runs" not in data:
+        data = {
+            "_comment": "Registry of backtest runs — primary path run_outputs/ (see run_outputs/README.md)",
+            "runs": [],
+        }
     runs = data.get("runs", [])
     runs.append(entry)
     data["runs"] = runs
     data["_last_updated"] = entry["date"]
-    with open(registry_path, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"\n[Saved run to {registry_path}]")
+    for p in (out_reg, stor_reg):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"\n[Saved run to {out_reg}]")
+    print(f"[Mirror: {stor_reg}]")
 
 
 def _decision_density(r: BacktestResult, period_years: float) -> dict:
@@ -321,8 +343,7 @@ def main():
             "low_vol_tilt": args.low_vol_tilt,
             "dual_momentum": args.dual_momentum,
         }
-        registry_path = Path(__file__).parent.parent / "storage" / "backtest_runs.json"
-        _save_backtest_run(params, r_stat, r_ml, registry_path, args.label)
+        _save_backtest_run(params, r_stat, r_ml, args.label, Path(__file__).parent.parent)
     else:
         # Auto-save (Stat only)
         params = {
@@ -334,8 +355,7 @@ def main():
             "low_vol_tilt": args.low_vol_tilt,
             "dual_momentum": args.dual_momentum,
         }
-        registry_path = Path(__file__).parent.parent / "storage" / "backtest_runs.json"
-        _save_backtest_run(params, r_stat, None, registry_path, args.label)
+        _save_backtest_run(params, r_stat, None, args.label, Path(__file__).parent.parent)
 
     print("\n" + "=" * 65)
     return 0

@@ -1,5 +1,6 @@
 # מטריצת ריצות מחקר — כל ריצה פלט נפרד, בלי לשנות ברירות מחדל בקוד.
 # לכל ריצה חובה שדה engine: סיכום אלגוריתמים + דגלים (מועתק למניפסט JSON).
+# נתיבי --out: run_research_suite מזרים {out_dir} = run_outputs/research_runs (לא ב-gitignore).
 # הרצה: python scripts/run_research_suite.py --list
 #         python scripts/run_research_suite.py
 #         python scripts/run_research_suite.py --quick --group single

@@ -8,7 +8,7 @@
 
 | רכיב קיים | תפקיד |
 |-----------|--------|
-| **`run_backtest_with_ml.py`** | מסלול יומיומי; הסוויטה רק מוסיפה `--label` ייחודי לכל ריצה כדי שיופיעו נפרדים ב־`storage/backtest_runs.json` |
+| **`run_backtest_with_ml.py`** | מסלול יומיומי; הסוויטה רק מוסיפה `--label` ייחודי לכל ריצה — נשמר ב־`run_outputs/backtest_runs.json` |
 | **`run_multi_universe.py`** | אותו קוד; הסוויטה קוראת עם `--profile` / דגלים ו־`--out` ל־`storage/research_runs/*.json` |
 | **`run_enhancement_ab.py`** | סוללת A/B; הסוויטה שומרת JSON תחת `storage/research_runs/suite_ab_*.json` (לא דורס את `storage/enhancement_ab_*.json` הישנים אלא אם תשנה YAML) |
 | **`docs/WORKING_MULTI_UNIVERSE_PROFILES.md`** | מפרט **מה** כל פרופיל עושה; הסוויטה רק **מריצה** את השילובים המומלצים לניתוח |
@@ -39,7 +39,7 @@ python scripts/run_research_suite.py --quick
 python scripts/run_research_suite.py --only s01_bwml_baseline,s02_bwml_lowvol
 ```
 
-אחרי הרצה אמיתית נוצר **`storage/research_runs/_suite_manifest_*.json`** עם הפקודות, **קודי יציאה**, ושדה **`engine`** לכל ריצה (סיכום אלגוריתמים/דגלים מ־`config/research_run_matrix.yaml`).
+אחרי הרצה אמיתית נוצר **`run_outputs/research_runs/_suite_manifest_*.json`** עם הפקודות, **קודי יציאה**, ושדה **`engine`** לכל ריצה (סיכום אלגוריתמים/דגלים מ־`config/research_run_matrix.yaml`). ראו `run_outputs/README.md`.
 
 ### תיעוד חובה אחרי כל סוויטה / ניסוי
 

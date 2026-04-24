@@ -13,10 +13,10 @@
 **מקורות עזר לעת העתקה:** שדה `engine` ב־`config/research_run_matrix.yaml`, ומניפסט `storage/research_runs/_suite_manifest_*.json` (אחרי `run_research_suite.py`).
 
 **איך מוסיפים רשומה:**  
-העתיקו את תבנית הרשומה בתחתית, מלאו את כל השדות. שמרו גולם ב־`storage/*.json`.
+העתיקו את תבנית הרשומה בתחתית, מלאו את כל השדות. **פלטי הרצות לתיעוד:** `run_outputs/` (ראו `run_outputs/README.md`) — נגישים לגיט ולסוכן; `storage/` נשאר מקומי (מראה ל־backtest_runs ודגימות).
 
 **מסמכים קשורים:**  
-`docs/SIMPLE_SYSTEM_EXPLANATION_HE.md` (הסבר פשוט: רכיבים, שם באנגלית + תיאור בעברית, למה מניה בודדת מול ממוצע יקום), `docs/RECOMMENDED_ENHANCEMENTS_AB.md` (פרוטוקול A/B), `docs/WORKING_MULTI_UNIVERSE_PROFILES.md` (multi-symbol: ברירת מחדל vs production + דגלים), `docs/RESEARCH_RUN_SUITE.md` (מטריצת ריצות מבודדות + `run_research_suite.py`), `RESULTS_SUMMARY.md`, `ALGORITHM_SPEC.md`.
+`docs/SIMPLE_SYSTEM_EXPLANATION_HE.md` (הסבר פשוט: רכיבים, שם באנגלית + תיאור בעברית, למה מניה בודדת מול ממוצע יקום), `docs/HOT_UNIVERSE_PORTFOLIO_PLAN.md` (דירוג יקום + תיק — שלבים, דגלים, `rank_universe.py`), `docs/RECOMMENDED_ENHANCEMENTS_AB.md` (פרוטוקול A/B), `docs/WORKING_MULTI_UNIVERSE_PROFILES.md` (multi-symbol: ברירת מחדל vs production + דגלים), `docs/RESEARCH_RUN_SUITE.md` (מטריצת ריצות מבודדות + `run_research_suite.py`), `RESULTS_SUMMARY.md`, `ALGORITHM_SPEC.md`.
 
 ---
 
@@ -99,7 +99,7 @@ python scripts/run_research_suite.py --only m01_multi_best_combo,m03_multi_produ
 ```
 
 **גולם:**  
-`storage/research_runs/suite_m01_best_combo_3y.json` · `suite_m03_production_3y.json` · `suite_m04_production_lowvol_3y.json` · מניפסט `storage/research_runs/_suite_manifest_20260422_204756.json` (או חדש יותר אם הורצה שוב).
+מעודכן לנתיב **`run_outputs/research_runs/`** (ראו `run_outputs/README.md`): `suite_m01_best_combo_3y.json` · `suite_m03_production_3y.json` · `suite_m04_production_lowvol_3y.json` · מניפסט `_suite_manifest_*.json`. ריצות ישנות עשויות עדיין להופיע תחת `storage/` מקומי.
 
 ---
 
